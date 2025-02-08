@@ -17,7 +17,7 @@ interface DPSNError {
 
 interface ChainOptions {
     network: NetworkType;
-    blockchain: string;
+    wallet_chain_type: string;
     rpcUrl: string;
     isMainnet: boolean;
     isTestnet: boolean;
@@ -50,8 +50,8 @@ function validateChainOptions(options: ChainOptions): void {
     if (!['mainnet', 'testnet'].includes(options.network)) {
         throw new Error('Network must be either mainnet or testnet');
     }
-    if (options.blockchain !== 'ethereum') {
-        throw new Error('Only Ethereum blockchain is supported right now');
+    if (options.wallet_chain_type !== 'ethereum') {
+        throw new Error('Only Ethereum wallet_chain_type is supported right now');
     }
     if (typeof options.isMainnet !== 'boolean' || typeof options.isTestnet !== 'boolean') {
         throw new Error('isMainnet and isTestnet must be boolean values');
@@ -88,7 +88,7 @@ class DpsnClient {
         this.walletAddress = this.wallet.address;
         this.mainnet = chainOptions.isMainnet;
         this.testnet = chainOptions.isTestnet;
-        this.blockchainType = chainOptions.blockchain;
+        this.blockchainType = chainOptions.wallet_chain_type;
         this.dpsnUrl = `mqtt://${dpsnUrl}`
         this.topicContractAbi = TopicRegistryAbi;
     }

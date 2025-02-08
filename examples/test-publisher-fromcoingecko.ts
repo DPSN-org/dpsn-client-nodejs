@@ -5,7 +5,7 @@ import DpsnClient from '../src';
   try{
     const dpsn = new DpsnClient("DPSN_URL","WALLET_PYT_KEY",{
       network:'testnet',
-      blockchain:'ethereum',
+      wallet_chain_type:'ethereum',
       rpcUrl:"RPC_URL",
       isMainnet:false,
       isTestnet:true

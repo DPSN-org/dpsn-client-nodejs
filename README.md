@@ -2,7 +2,7 @@
 
 ## Overview
 
-`dpsn-client-nodejs` is an SDK for managing topic subscriptions and publications using MQTT and Ethereum blockchain. It allows you to connect to a DPSN broker, publish messages to topics, and subscribe to topics to receive messages.
+`dpsn-client-nodejs` is an SDK for creating,accessing topic (data stream)subscriptions and publications on Base wallet_chain_type. It allows you to connect to a DPSN broker, publish messages to topics, and subscribe to topics to receive messages.
 
 ## Installation
 
@@ -20,13 +20,16 @@ import DpsnClient from 'dpsn-client-nodejs';
 
 ### Initializing the Client
 
+> **Caution:** Ensure you use  Base testnet RPC URL provided by DPSN to use the library correctly.
+
+
 To initialize the DPSN client, create an instance of [`DpsnClient`](src/index.ts) 
 
 ```ts
 const dpsn = new DpsnClient("DPSN_URL", "WALLET_PRIVATE_KEY", {
   network: 'testnet',
-  blockchain: 'ethereum',
-  rpcUrl: "RPC_URL",
+  wallet_chain_type: 'ethereum',
+  rpcUrl: "BASE_RPC_URL",
   isMainnet: false,
   isTestnet: true
 });
@@ -54,6 +57,9 @@ await dpsn.init();
 
 To register a new topic in the dpsn infrastructure,  
 The first step is to set the valid dpsn contract address using the `setContractAddress` method,
+> **Caution:** Ensure you use the contract Address provided by DPSN to use the library  correctly.
+
+
 ```ts
 dpsn.setContractAddress("CONTRACT_ADDRESS");
 ```
@@ -137,7 +143,7 @@ constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions)
 ```ts
 interface ChainOptions {
   network: NetworkType;
-  blockchain: string;
+  wallet_chain_type: string;
   rpcUrl: string;
   isMainnet: boolean;
   isTestnet: boolean;
@@ -176,7 +182,7 @@ interface DPSNError {
 ### Error Codes
 DPSN_CONNECTION_ERROR
 DPSN_PUBLISH_ERROR
-DPSN_CLIENT_NOT_INITIALIZED
+DPSN_CLIENT_NOT_INITIALIZEDB
 DPSN_CLIENT_NOT_CONNECTED
 DPSN_SUBSCRIBE_ERROR
 DPSN_SUBSCRIBE_NO_GRANT

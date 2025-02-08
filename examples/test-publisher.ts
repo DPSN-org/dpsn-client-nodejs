@@ -4,10 +4,12 @@ import { ethers } from 'ethers';
 // Initialize DPSN client
 async function main() {
   try {
-    const dpsn = new DpsnClient("DPSN_URL","WALLET_PYT_KEY",{
+      const dpsn = new DpsnClient("DPSN_URL","WALLET_PYT_KEY",{
+
       network:'testnet',
-      blockchain:'ethereum',
+      wallet_chain_type:'ethereum',
       rpcUrl:"RPC_URL",
+
       isMainnet:false,
       isTestnet:true
     })
@@ -20,8 +22,8 @@ async function main() {
   
     console.log('Initializing DPSN client...');
     await dpsn.init();
-
     const contractAddress = "CONTRACT_ADDRESS";
+
   dpsn.setContractAddress(contractAddress);
 
     // Get topic Hashes

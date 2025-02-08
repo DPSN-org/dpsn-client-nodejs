@@ -16,7 +16,7 @@ interface WaitForTransactionOptions {
 }
 
 /**
- * Waits for a transaction to be confirmed on the blockchain
+ * Waits for a transaction to be confirmed on the blockchain of the rpc url .
  * @param provider - Ethers provider instance
  * @param txHash - Transaction hash to wait for
  * @param options - Configuration options
