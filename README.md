@@ -15,15 +15,15 @@ npm install dpsn-client-nodejs
 ### Importing the Library
 
 ```ts
-import DpsnLib from 'dpsn-client-nodejs';
+import DpsnClient from 'dpsn-client-nodejs';
 ```
 
 ### Initializing the Client
 
-To initialize the DPSN client, create an instance of [`DpsnLib`](src/index.ts) 
+To initialize the DPSN client, create an instance of [`DpsnClient`](src/index.ts) 
 
 ```ts
-const dpsn = new DpsnLib("DPSN_URL", "WALLET_PRIVATE_KEY", {
+const dpsn = new DpsnClient("DPSN_URL", "WALLET_PRIVATE_KEY", {
   network: 'testnet',
   blockchain: 'ethereum',
   rpcUrl: "RPC_URL",
@@ -110,7 +110,7 @@ console.log("Topic price:", price);
 
 ### Classes
 
-#### [`DpsnLib`](src/index.ts)
+#### [`DpsnClient`](src/index.ts)
 
 ##### Constructor
 

@@ -1,10 +1,10 @@
-import DpsnLib from '../src';
+import DpsnClient from '../src';
 import { ethers } from 'ethers';
 
 // Initialize DPSN client
 async function main() {
   try {
-    const dpsn = new DpsnLib("DPSN_URL","WALLET_PYT_KEY",{
+    const dpsn = new DpsnClient("DPSN_URL","WALLET_PYT_KEY",{
       network:'testnet',
       blockchain:'ethereum',
       rpcUrl:"RPC_URL",

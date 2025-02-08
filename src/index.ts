@@ -61,7 +61,7 @@ function validateChainOptions(options: ChainOptions): void {
 /**
  * DPSN MQTT library for managing topic subscriptions and publications
  */
-class DpsnLib {
+class DpsnClient {
     private provider: ethers.JsonRpcProvider;
     private wallet: ethers.Wallet;
     private walletAddress: string;
@@ -69,7 +69,7 @@ class DpsnLib {
     private testnet: boolean;
     private blockchainType: string;
     private password?: string;
-    public dpsnClient?: MqttClient;
+    public dpsnBroker?: MqttClient;
     private topicContractAbi: any;
     public dpsnUrl:string;
     private connected:boolean = false;
@@ -104,18 +104,18 @@ class DpsnLib {
         const attemptConnect = async (retryCount: number = 0): Promise<void> => {
             try {
                 return await new Promise<void>((resolve, reject) => {
-                    this.dpsnClient = mqtt.connect(this.dpsnUrl, mqttOptions);
+                    this.dpsnBroker = mqtt.connect(this.dpsnUrl, mqttOptions);
 
-                    if (!this.dpsnClient) {
+                    if (!this.dpsnBroker) {
                         throw new Error('Dpsn client initialization failed');
                     }
 
                     const connectionTimeout = setTimeout(() => {
-                        this.dpsnClient?.end(true);
+                        this.dpsnBroker?.end(true);
                         reject(new Error(`Connection timeout after ${mqttOptions.connectTimeout}ms`));
                     }, mqttOptions.connectTimeout);
 
-                    this.dpsnClient.on('error', (error) => {
+                    this.dpsnBroker.on('error', (error) => {
                         this.connected = false;
                         clearTimeout(connectionTimeout);
                         const dpsnError: DPSNError = {
@@ -127,7 +127,7 @@ class DpsnLib {
                         reject(dpsnError);
                     });
 
-                    this.dpsnClient.on('connect', () => {
+                    this.dpsnBroker.on('connect', () => {
                         clearTimeout(connectionTimeout);
                         this.connected = true;
                         this.connectCallback("[CONNECTION ESTABLISHED]");
@@ -177,23 +177,23 @@ class DpsnLib {
 
             await this.connectWithRetry(mqttOptions, options.retryOptions);
 
-            this.dpsnClient!.on('error', (error) => {
+            this.dpsnBroker!.on('error', (error) => {
                 this.errorCallback(error);
             });
 
-            this.dpsnClient!.on('close', () => {
+            this.dpsnBroker!.on('close', () => {
                 this.connected = false;
             });
 
-            this.dpsnClient!.on('disconnect', () => {
+            this.dpsnBroker!.on('disconnect', () => {
                 this.connected = false;
             });
 
-            this.dpsnClient!.on('offline', () => {
+            this.dpsnBroker!.on('offline', () => {
                 this.connected = false;
             });
 
-            return this.dpsnClient!;
+            return this.dpsnBroker!;
         } catch (error) {
             throw error;
         }
@@ -223,7 +223,7 @@ class DpsnLib {
         message: any,
         options: Partial<mqtt.IClientPublishOptions> = { qos: 1, retain: false }
     ): Promise<void> {
-        if (!this.dpsnClient) {
+        if (!this.dpsnBroker) {
             throw new Error('❌ MQTT client not initialized. Call init() first.');
         }
 
@@ -246,7 +246,7 @@ class DpsnLib {
             };
 
             return new Promise((resolve, reject) => {
-                this.dpsnClient!.publish(
+                this.dpsnBroker!.publish(
                     topic,
                     JSON.stringify(message),
                     publishOptions,
@@ -257,7 +257,7 @@ class DpsnLib {
                                 message: error.message || 'Failed to publish message' + "connection disconnected",
                             };
                             // Emit the error event to trigger global handler
-                            this.dpsnClient?.emit('error', dpsnError as Error);
+                            this.dpsnBroker?.emit('error', dpsnError as Error);
                             return reject(dpsnError);
                         }
                         console.log(`✅ Successfully published to '${topic}' with QoS ${options.qos}`);
@@ -286,7 +286,7 @@ class DpsnLib {
         callback: (topic: string, message: any, packet?: mqtt.IPublishPacket) => void,
         options: mqtt.IClientSubscribeOptions = { qos: 1 }
     ): Promise<void> {
-        if (!this.dpsnClient) {
+        if (!this.dpsnBroker) {
             const dpsnError: DPSNError = {
                 code: 'DPSN_CLIENT_NOT_INITIALIZED',
                 message: 'Cannot subscribe: MQTT client not initialized. Please ensure init() is called first.',
@@ -306,14 +306,14 @@ class DpsnLib {
 
         try {
             await new Promise<void>((resolve, reject) => {
-                this.dpsnClient!.subscribe(topic, options, (error, granted) => {
+                this.dpsnBroker!.subscribe(topic, options, (error, granted) => {
                     if (error) {
                         const dpsnError: DPSNError = {
                             code: 'DPSN_SUBSCRIBE_ERROR',
                             message: `Failed to subscribe to topic '${topic}': ${error.message}`,
 
                         };
-                        this.dpsnClient?.emit('error', dpsnError as Error);
+                        this.dpsnBroker?.emit('error', dpsnError as Error);
                         reject(dpsnError);
                         return;
                     }
@@ -334,7 +334,7 @@ class DpsnLib {
             });
 
             // Set up message handler for this topic
-            this.dpsnClient.on('message', (receivedTopic: string, message: Buffer, packet: mqtt.IPublishPacket) => {
+            this.dpsnBroker.on('message', (receivedTopic: string, message: Buffer, packet: mqtt.IPublishPacket) => {
                 if (receivedTopic === topic) {
                     try {
                         const parsedMessage = JSON.parse(message.toString());
@@ -512,5 +512,5 @@ class DpsnLib {
 }
 
 
-export default DpsnLib;
+export default DpsnClient;
 export type { ChainOptions, NetworkType, InitOptions, DPSNError };
