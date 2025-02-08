@@ -1,26 +1,42 @@
 {
   "name": "dpsn-client",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "DPSN SDK for managing topic subscriptions and publications in web3",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc",
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prepublishOnly": "npm run build"
-
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run test"
   },
-  "keywords": ["dpsn"],
+  "keywords": [
+    "dpsn",
+    "web3",
+    "blockchain",
+    "pubsub"
+  ],
   "author": "",
   "license": "ISC",
-  "description":  "DPSN SDK for managing topic subscriptions and publications in web3",
+  "peerDependencies": {
+    "ethers": "^6.13.5"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.3",
+    "node-fetch": "^3.3.2"
+  },
   "devDependencies": {
     "@types/node": "^22.13.1",
     "ethers": "^6.13.5",
-    "mqtt": "^5.10.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   },
-  "dependencies": {
-    "dotenv": "^16.4.7",
-    "node-fetch": "^3.3.2"
+  "engines": {
+    "node": ">=14.0.0"
   }
 }

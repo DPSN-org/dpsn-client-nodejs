@@ -7,7 +7,7 @@
 ## Installation
 
 ```sh
-npm install dpsn-client-nodejs
+npm install dpsn-client
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ npm install dpsn-client-nodejs
 ### Importing the Library
 
 ```ts
-import DpsnClient from 'dpsn-client-nodejs';
+import DpsnClient from 'dpsn-client';
 ```
 
 ### Initializing the Client
@@ -61,18 +61,20 @@ The first step is to set the valid dpsn contract address using the `setContractA
 
 
 ```ts
+
 dpsn.setContractAddress("CONTRACT_ADDRESS");
-```
+
 Then  call the purchaseTopic method to register your topic name on-chain.
-```ts
+
 const { receipt, topicHash } = await dpsn.purchaseTopic("TOPIC_NAME");
 console.log("Purchased topic:", topicHash);
-```;
+```
 
 ### Setting Contract Address
 
 To set the contract address for interacting with the smart contract, use the [`setContractAddress`](src/index.ts) method.
 [`purchaseTopic`](src/index.ts)
+
 
 ### Publishing Messages
 

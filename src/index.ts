@@ -1,7 +1,3 @@
-// TODO: 1. On error callbacks for subscribe and publish.
-//TODO:  readme.md, for cli tool. 
-//TODO: index.html, which help user to
-
 import mqtt, { IClientOptions, MqttClient } from 'mqtt';
 import { ethers } from 'ethers';
 import { TopicRegistryAbi } from './topicregistry-abi/contract.abi';
