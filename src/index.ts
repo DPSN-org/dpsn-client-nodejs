@@ -1,7 +1,7 @@
 import mqtt, { IClientOptions, MqttClient } from 'mqtt';
 import { ethers } from 'ethers';
-import { TopicRegistryAbi } from './topicregistry-abi/contract.abi';
-import { waitForTransactionConfirmation } from './utils/waitForTransactionConfirmation';
+import { TopicRegistryAbi } from './topicregistry-abi/contract.abi.js';
+import { waitForTransactionConfirmation } from './utils/waitForTransactionConfirmation.js';
 
 type NetworkType = 'mainnet' | 'testnet';
 
@@ -35,6 +35,18 @@ interface InitOptions {
         maxDelay?: number;           // Maximum delay between retries in milliseconds
         exponentialBackoff?: boolean; // Whether to use exponential backoff
     };
+}
+
+/**
+ * Connection options for DPSN client
+ */
+interface ConnectionOptions {
+    /**
+     * Whether to use SSL for MQTT connection
+     * If true, mqtts:// protocol will be used
+     * If false, mqtt:// protocol will be used
+     */
+    ssl?: boolean;
 }
 
 /**
@@ -73,7 +85,7 @@ class DpsnClient {
     private errorCallback:any;
     private contract?:ethers.Contract;
 
-    constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions) {
+    constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions, connectionOptions: ConnectionOptions = { ssl: true }) {
 
         // Validate chain options
         validateChainOptions(chainOptions);
@@ -85,7 +97,9 @@ class DpsnClient {
         this.mainnet = chainOptions.isMainnet;
         this.testnet = chainOptions.isTestnet;
         this.blockchainType = chainOptions.wallet_chain_type;
-        this.dpsnUrl = `mqtt://${dpsnUrl}`
+        // Use mqtts:// or mqtt:// based on useSSL parameter
+        const protocol = connectionOptions.ssl !== false ? 'mqtts' : 'mqtt';
+        this.dpsnUrl = `${protocol}://${dpsnUrl}`
         this.topicContractAbi = TopicRegistryAbi;
     }
 
@@ -508,5 +522,10 @@ class DpsnClient {
 }
 
 
+
 export default DpsnClient;
-export type { ChainOptions, NetworkType, InitOptions, DPSNError };
+export {DpsnClient}
+if(typeof module !== 'undefined' && module.exports){
+    module.exports = Object.assign(DpsnClient,{default:DpsnClient})
+}
+export type { ChainOptions, NetworkType, InitOptions, DPSNError, ConnectionOptions };
