@@ -1,7 +1,7 @@
 import mqtt, { IClientOptions, MqttClient } from 'mqtt';
 import { ethers } from 'ethers';
-import { TopicRegistryAbi } from './topicregistry-abi/contract.abi';
-import { waitForTransactionConfirmation } from './utils/waitForTransactionConfirmation';
+import { TopicRegistryAbi } from './topicregistry-abi/contract.abi.js';
+import { waitForTransactionConfirmation } from './utils/waitForTransactionConfirmation.js';
 
 type NetworkType = 'mainnet' | 'testnet';
 
@@ -523,25 +523,9 @@ class DpsnClient {
 
 
 
-// Export types for TypeScript users
-export type { ChainOptions, NetworkType, InitOptions, DPSNError, ConnectionOptions };
-
-/**
- * Main export - use a simple pattern to avoid require cycles
- * This approach works in both CommonJS and ESM environments
- */
-
-// Create the default export
-const defaultExport = DpsnClient;
-
-// Export as default for ESM
-export default defaultExport;
-
-// Export as named export for ESM
-export { DpsnClient };
-
-// Handle CommonJS interoperability
-if (typeof module !== 'undefined' && module.exports) {
-  // Use a direct assignment to avoid Object.assign which can cause issues
-  module.exports = defaultExport;
+export default DpsnClient;
+export {DpsnClient}
+if(typeof module !== 'undefined' && module.exports){
+    module.exports = Object.assign(DpsnClient,{default:DpsnClient})
 }
+export type { ChainOptions, NetworkType, InitOptions, DPSNError, ConnectionOptions };

@@ -2,11 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "commonjs",
-    "moduleResolution": "node",
     "outDir": "./dist/cjs",
     "declaration": false,
-    "declarationMap": false,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "declarationMap": false
   }
 }
