@@ -1,6 +1,6 @@
 {
   "name": "dpsn-client",
-  "version": "1.0.6",
+  "version": "1.0.4",
   "description": "DPSN SDK for managing topic subscriptions and publications in web3",
   "main": "./dist/cjs/index.js",
   "types": "./dist/types/index.d.ts",
