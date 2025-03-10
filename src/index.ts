@@ -14,9 +14,7 @@ interface DPSNError {
 interface ChainOptions {
     network: NetworkType;
     wallet_chain_type: string;
-    rpcUrl: string;
-    isMainnet: boolean;
-    isTestnet: boolean;
+    rpcUrl?: string;
 }
 
 interface MqttPublishOptions extends mqtt.IClientPublishOptions {
@@ -54,15 +52,11 @@ interface ConnectionOptions {
  * @param options - Chain configuration options
  */
 function validateChainOptions(options: ChainOptions): void {
-    if (!options.rpcUrl) throw new Error('RPC URL is required');
     if (!['mainnet', 'testnet'].includes(options.network)) {
         throw new Error('Network must be either mainnet or testnet');
     }
     if (options.wallet_chain_type !== 'ethereum') {
         throw new Error('Only Ethereum wallet_chain_type is supported right now');
-    }
-    if (typeof options.isMainnet !== 'boolean' || typeof options.isTestnet !== 'boolean') {
-        throw new Error('isMainnet and isTestnet must be boolean values');
     }
 }
 
@@ -70,7 +64,7 @@ function validateChainOptions(options: ChainOptions): void {
  * DPSN MQTT library for managing topic subscriptions and publications
  */
 class DpsnClient {
-    private provider: ethers.JsonRpcProvider;
+    private provider!: ethers.JsonRpcProvider;
     private wallet: ethers.Wallet;
     private walletAddress: string;
     private mainnet: boolean;
@@ -84,6 +78,7 @@ class DpsnClient {
     private connectCallback:any;
     private errorCallback:any;
     private contract?:ethers.Contract;
+    private initializing: Promise<MqttClient> | null = null;
 
     constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions, connectionOptions: ConnectionOptions = { ssl: true }) {
 
@@ -91,18 +86,26 @@ class DpsnClient {
         validateChainOptions(chainOptions);
     
         // Set up chain configuration
-        this.provider = new ethers.JsonRpcProvider(chainOptions.rpcUrl);
-        this.wallet = new ethers.Wallet(privateKey, this.provider);
+        if(chainOptions.rpcUrl){
+            this.provider = new ethers.JsonRpcProvider(chainOptions.rpcUrl);
+        }
+
+        this.wallet = new ethers.Wallet(privateKey);
+
         this.walletAddress = this.wallet.address;
-        this.mainnet = chainOptions.isMainnet;
-        this.testnet = chainOptions.isTestnet;
+        this.mainnet = chainOptions.network === 'mainnet' ;
+        this.testnet = chainOptions.network === 'testnet';
+        
         this.blockchainType = chainOptions.wallet_chain_type;
         // Use mqtts:// or mqtt:// based on useSSL parameter
         const protocol = connectionOptions.ssl !== false ? 'mqtts' : 'mqtt';
         this.dpsnUrl = `${protocol}://${dpsnUrl}`
         this.topicContractAbi = TopicRegistryAbi;
+        
+        // Set default callbacks to prevent errors if not set by user
+        this.connectCallback = (msg: any) => console.log(msg);
+        this.errorCallback = (error: any) => console.error(error);
     }
-
 
 
     private async connectWithRetry(mqttOptions: IClientOptions, retryOptions?: InitOptions['retryOptions']): Promise<void> {
@@ -172,6 +175,23 @@ class DpsnClient {
      * @returns Promise that resolves when the MQTT client is connected
      */
 
+    /**
+     * Ensures the client is initialized before performing operations
+     * @param options - Optional initialization options
+     * @returns Promise that resolves to the MQTT client
+     */
+    private async ensureInitialized(options: InitOptions = {}): Promise<MqttClient> {
+        if (this.dpsnBroker && this.connected) {
+            return this.dpsnBroker;
+        }
+        
+        if (!this.initializing) {
+            this.initializing = this.init(options);
+        }
+        
+        return this.initializing;
+    }
+
     async init(options: InitOptions = {}): Promise<MqttClient> {
         try {
             const signature = await this.wallet.signMessage('testing');
@@ -233,8 +253,11 @@ class DpsnClient {
         message: any,
         options: Partial<mqtt.IClientPublishOptions> = { qos: 1, retain: false }
     ): Promise<void> {
+        // Ensure client is initialized before publishing
+        await this.ensureInitialized();
+        
         if (!this.dpsnBroker) {
-            throw new Error('❌ MQTT client not initialized. Call init() first.');
+            throw new Error('❌ MQTT client not initialized. Initialization failed.');
         }
 
         const parentTopic = topic.split("/")[0];
@@ -296,10 +319,22 @@ class DpsnClient {
         callback: (topic: string, message: any, packet?: mqtt.IPublishPacket) => void,
         options: mqtt.IClientSubscribeOptions = { qos: 1 }
     ): Promise<void> {
+        // Ensure client is initialized before subscribing
+        try {
+            await this.ensureInitialized();
+        } catch (error) {
+            const dpsnError: DPSNError = {
+                code: 'DPSN_INITIALIZATION_FAILED',
+                message: `Failed to initialize MQTT client: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                status: 'disconnected'
+            };
+            throw dpsnError;
+        }
+        
         if (!this.dpsnBroker) {
             const dpsnError: DPSNError = {
                 code: 'DPSN_CLIENT_NOT_INITIALIZED',
-                message: 'Cannot subscribe: MQTT client not initialized. Please ensure init() is called first.',
+                message: 'Cannot subscribe: MQTT client not initialized. Initialization failed.',
                 status: 'disconnected'
             };
             throw dpsnError;
@@ -372,7 +407,7 @@ class DpsnClient {
         try {
 
             if (!this.contract) {
-                throw new Error('Contract not initialized. Please call setContractAddress first.');
+                throw new Error('Blockchain configuration not initialized. Please call setBlockchainConfig first.');
             }
             
             const topicHashes = await this.contract?.getUserTopics(this.walletAddress);
@@ -391,7 +426,7 @@ class DpsnClient {
     async getTopicPrice(): Promise<ethers.BigNumberish> {
         try {
             if (!this.contract) {
-                throw new Error('Contract not initialized. Please call setContractAddress first.');
+                throw new Error('Blockchain configuration not initialized. Please call setBlockchainConfig first.');
             }
             const price = await this.contract?.getTopicPrice();
             return price;
@@ -438,6 +473,14 @@ class DpsnClient {
     ): Promise<{ receipt: ethers.TransactionReceipt; topicHash: string }> {
         try {
 
+            if (!this.contract) {
+                throw new Error('Blockchain configuration not initialized. Please call setBlockchainConfig first.');
+            }
+            
+            if(!this.provider){
+                throw new Error('Provider not initialized. Please call setBlockchainConfig first.');
+            }
+
             const price = ethers.toBigInt(await this.getTopicPrice());
 
             await this.checkBalance(price);
@@ -449,16 +492,17 @@ class DpsnClient {
             const signature = await this.wallet.signMessage(ethers.getBytes(topicHash));
             console.log('Generated signature:', signature);
 
-            if (!this.contract) {
-                throw new Error('Contract not initialized. Please call setContractAddress first.');
-            }
+         
 
             const getContractAddress = await this.contract.getAddress();
 
+            // Connect the wallet to the provider before creating the contract instance
+            const connectedWallet = this.wallet.connect(this.provider);
+            
             const contractSigner = new ethers.Contract(
               getContractAddress,
               this.topicContractAbi,
-              this.wallet
+              connectedWallet
             )
 
 
@@ -498,19 +542,49 @@ class DpsnClient {
     }
 
     /**
+     * Sets the JSON RPC provider for blockchain interactions
+     * @param rpcUrl - The URL of the JSON RPC endpoint
+     * @returns The provider instance
+     */
+    setProvider(rpcUrl: string): ethers.JsonRpcProvider {
+        this.provider = new ethers.JsonRpcProvider(rpcUrl);
+        return this.provider;
+    }
+
+    /**
+     * Sets both the provider and contract address in a single call
+     * @param rpcUrl - The URL of the JSON RPC endpoint
+     * @param contractAddress - The address of the deployed contract
+     * @returns The initialized contract instance
+     */
+    setBlockchainConfig(rpcUrl?: string, contractAddress?: string): ethers.Contract {
+        if(rpcUrl) 
+        {// Set the provider first
+        this.setProvider(rpcUrl);
+        }
+        if(contractAddress){
+        // Then set the contract address
+        this.setContractAddress(contractAddress);
+        }
+        // Return the contract instance
+        return this.contract!;
+    }
+
+    /**
      * Creates a contract interface for interacting with the smart contract
      * @param contractAddress - The address of the deployed contract
      * @returns The contract interface
      */
     setContractAddress(contractAddress: string): void {
         if (!this.provider) {
-            throw new Error('RPC client not initialized. Please check your RPC URL.');
+            throw new Error('Provider not initialized. Please call setBlockchainConfig first.');
         }
+        const connectedWallet = this.wallet.connect(this.provider);
         try {
             this.contract = new ethers.Contract(
                 contractAddress,
                 this.topicContractAbi,
-                this.provider
+                connectedWallet
             );
             // this.contract = contract;
 
