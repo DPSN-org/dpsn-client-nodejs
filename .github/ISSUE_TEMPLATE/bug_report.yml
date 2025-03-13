@@ -51,15 +51,16 @@ body:
   attributes:
       label: "👀 Have you spent some time to check if this bug has been raised before?"
       description: Please [search the history](https://github.com/DPSN-org/dpsn-client-nodejs/issues) to see if an issue already exists for the same problem.
-  options:
+      options:
         - label: "I checked and didn't find a similar issue"
           required: true
 - type: dropdown
+  id: willing-to-submit-pr
   attributes:
-      label: Are you willing to submit PR?
-      description: This is absolutely not required, but we are happy to guide you in the contribution process. 
+      label: "Are you willing to submit PR?"
+      description: "This is absolutely not required, but we are happy to guide you in the contribution process."
       options:
-        - "Yes I am willing to submit a PR!"    
+        - "Yes I am willing to submit a PR!"
 - type: markdown
   attributes:
       value: Thank you! ❤️
