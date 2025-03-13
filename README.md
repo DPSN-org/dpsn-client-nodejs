@@ -2,7 +2,11 @@
 
 ## Overview
 
-`dpsn-client-nodejs` is an SDK for creating, accessing topic (data stream) subscriptions and publications on Ethereum-based blockchains. It allows you to connect to a DPSN broker, publish messages to topics, and subscribe to topics to receive messages.
+`dpsn-client-nodejs` is an SDK for creating, accessing data streams on DPSN infrastructure. It allows you to connect to a DPSN broker, publish messages to topics, and subscribe to topics to receive messages.
+
+For more information, visit:
+- [DPSN Official Website](https://dpsn.org)
+- [DPSN Streams Marketplace](https://streams.dpsn.org)
 
 ## Installation
 
@@ -25,7 +29,7 @@ import { DpsnClient } from 'dpsn-client';
 To initialize the DPSN client, create an instance of [`DpsnClient`](src/index.ts)
 
 ```ts
-const dpsn = new DpsnClient("DPSN_URL", "WALLET_PRIVATE_KEY", {
+const dpsn = new DpsnClient("https://testnet.dpsn.org", "WALLET_PRIVATE_KEY", {
   network: 'testnet',
   wallet_chain_type: 'ethereum',
   rpcUrl: "RPC_URL" // Optional, can be set later using setBlockchainConfig()
@@ -51,14 +55,13 @@ dpsn.onError((error: any) => console.log("[Error LOG]", error));
 The `init` method initiates connection to the DPSN broker with optional configuration.
 
 ```ts
-// Optional: User can set according to their preference
 await dpsn.init({
-  connectTimeout: 5000, // Optional, default is 5000ms
+  connectTimeout: 5000,
   retryOptions: {
-    maxRetries: 3,           // Optional, default is 3
-    initialDelay: 1000,      // Optional, default is 1000ms
-    maxDelay: 10000,         // Optional, default is 10000ms
-    exponentialBackoff: true // Optional, default is true
+    maxRetries: 3,
+    initialDelay: 1000,
+    maxDelay: 10000,
+    exponentialBackoff: true
   }
 });
 ```
@@ -70,8 +73,6 @@ You can configure the blockchain connection in two ways:
 1. Using the `setBlockchainConfig` method (recommended):
 
 ```ts
-// Configure both RPC URL and contract address in one call
-// both parameters are optional
 dpsn.setBlockchainConfig("RPC_URL", "CONTRACT_ADDRESS");
 ```
 
@@ -82,9 +83,6 @@ dpsn.setBlockchainConfig("RPC_URL", "CONTRACT_ADDRESS");
 To register a new topic in the DPSN infrastructure:
 
 ```ts
-// First ensure blockchain configuration is set using one of the methods above
-
-// Then call the purchaseTopic method to register your topic name on-chain
 const { receipt, topicHash } = await dpsn.purchaseTopic("TOPIC_NAME");
 console.log("Purchased topic:", topicHash);
 ```
@@ -139,7 +137,7 @@ constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions, con
 
 ##### Methods
 
-- [`init(options?: InitOptions): Promise<MqttClient>`](src/index.ts) - Optional, only needed for MQTT messaging
+- [`init(options?: InitOptions): Promise<MqttClient>`](src/index.ts)
 - [`onConnect(callback: any): void`](src/index.ts)
 - [`onError(callback: any): void`](src/index.ts)
 - [`publish(topic: string, message: any, options?: Partial<mqtt.IClientPublishOptions>): Promise<void>`](src/index.ts)
@@ -166,11 +164,6 @@ interface ChainOptions {
 
 ```ts
 interface ConnectionOptions {
-  /**
-   * Whether to use SSL for MQTT connection
-   * If true, mqtts:// protocol will be used
-   * If false, mqtt:// protocol will be used
-   */
   ssl?: boolean;
 }
 ```
@@ -185,12 +178,12 @@ type NetworkType = 'mainnet' | 'testnet';
 
 ```ts
 interface InitOptions {
-  connectTimeout?: number;        // Connection timeout in milliseconds
+  connectTimeout?: number;
   retryOptions?: {
-    maxRetries?: number;         // Maximum number of retry attempts
-    initialDelay?: number;       // Initial delay between retries in milliseconds
-    maxDelay?: number;           // Maximum delay between retries in milliseconds
-    exponentialBackoff?: boolean; // Whether to use exponential backoff
+    maxRetries?: number;
+    initialDelay?: number;
+    maxDelay?: number;
+    exponentialBackoff?: boolean;
   };
 }
 ```
@@ -218,3 +211,4 @@ interface DPSNError {
 ## License
 
 This project is licensed under the ISC License.
+
