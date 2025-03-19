@@ -5,10 +5,97 @@ import { waitForTransactionConfirmation } from './utils/waitForTransactionConfir
 
 type NetworkType = 'mainnet' | 'testnet';
 
-interface DPSNError {
-    code?: string;
-    message?: string;
-    status?: 'connected' | 'disconnected'
+// Error code definitions
+enum DPSN_ERROR_CODES {
+  CONNECTION_ERROR = 400,
+  UNAUTHORIZED = 401,
+  PUBLISH_ERROR = 402,
+
+  INITIALIZATION_FAILED = 403,    
+  CLIENT_NOT_INITIALIZED = 404,   
+  CLIENT_NOT_CONNECTED = 405,     
+ 
+  SUBSCRIBE_ERROR = 406,          
+  SUBSCRIBE_NO_GRANT = 407,       
+  SUBSCRIBE_SETUP_ERROR = 408,    
+ 
+  DISCONNECT_ERROR = 409,
+  BLOCKCHAIN_CONFIG_ERROR = 410,
+  INVALID_PRIVATE_KEY = 411,
+  ETHERS_ERROR = 412,
+  MQTT_ERROR = 413
+};
+
+/**
+ * Standardized error class for DPSN client
+ * @property {string} code - Error code with DPSN_ prefix
+ * @property {string} [status] - Connection status when applicable
+ */
+class DPSNError extends Error {
+    code: DPSN_ERROR_CODES;
+    status?: 'connected' | 'disconnected';
+
+
+    constructor(options: {
+        code: DPSN_ERROR_CODES;
+        message: string;
+        status?: 'connected' | 'disconnected';
+        name?: string;
+    }) {
+        super(options.message);
+        this.code = options.code;
+        this.status = options.status;
+        this.name = options.name || '';
+    }
+}
+
+/**
+ * Check if an error is from ethers.js
+ * @param error The error to check
+ * @returns True if the error is from ethers.js
+ */
+function isEthersError(error: any): boolean {
+  // Check for common ethers.js error properties
+  return (
+    error && 
+    (error.code === 'INVALID_ARGUMENT' ||
+     (typeof error.code === 'string' && 
+      (error.code.startsWith('CALL_EXCEPTION') ||
+
+       error.code.startsWith('NONCE_EXPIRED') ||
+       error.code.startsWith('REPLACEMENT_UNDERPRICED') ||
+       error.code.startsWith('UNPREDICTABLE_GAS_LIMIT'))) ||
+     // Check for transaction-related errors
+     error.transaction !== undefined ||
+     // Check for provider-related errors
+     error.connection !== undefined ||
+     // Check for specific ethers error message patterns
+     (typeof error.message === 'string' && 
+      (error.message.includes('invalid BytesLike') ||
+       error.message.includes('transaction') ||
+       error.message.includes('contract') ||
+       error.message.includes('provider') ||
+       error.message.includes('network') ||
+       error.message.includes('gas'))))
+  );
+}
+
+/**
+ * Validate private key format using ethers.js
+ * @param privateKey The private key to validate
+ * @throws DPSNError if the private key is invalid
+ */
+function validatePrivateKey(privateKey: string): void {
+  try {
+    // Let ethers.js validate the private key
+    new ethers.Wallet(privateKey);
+  } catch (error) {
+    throw new DPSNError({
+      code: DPSN_ERROR_CODES.INVALID_PRIVATE_KEY,
+      message: `Invalid private key: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      status: 'disconnected'
+    });
+  }
 }
 
 interface ChainOptions {
@@ -81,30 +168,49 @@ class DpsnClient {
     private initializing: Promise<MqttClient> | null = null;
 
     constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions, connectionOptions: ConnectionOptions = { ssl: true }) {
+        try {
+            validateChainOptions(chainOptions);
+            validatePrivateKey(privateKey);
 
-        // Validate chain options
-        validateChainOptions(chainOptions);
-    
-        // Set up chain configuration
-        if(chainOptions.rpcUrl){
-            this.provider = new ethers.JsonRpcProvider(chainOptions.rpcUrl);
+            if(chainOptions.rpcUrl){
+                this.provider = new ethers.JsonRpcProvider(chainOptions.rpcUrl);
+            }
+            
+            this.wallet = new ethers.Wallet(privateKey);
+
+            this.walletAddress = this.wallet.address;
+            this.mainnet = chainOptions.network === 'mainnet' ;
+            this.testnet = chainOptions.network === 'testnet';
+            
+            this.blockchainType = chainOptions.wallet_chain_type;
+            const protocol = connectionOptions.ssl !== false ? 'mqtts' : 'mqtt';
+            this.dpsnUrl = `${protocol}://${dpsnUrl}`
+            this.topicContractAbi = TopicRegistryAbi;
+            
+            this.connectCallback = (msg: any) => console.log(msg);
+            this.errorCallback = (error: any) => console.error(error);
+        } catch (error) {
+            // If it's already a DPSNError (like INVALID_PRIVATE_KEY), just rethrow it
+            if (error instanceof DPSNError) {
+                throw error;
+            }
+            // Check for ethers.js errors
+            if (isEthersError(error)) {
+                const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.ETHERS_ERROR,
+                    message: `Blockchain initialization error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    status:'disconnected'
+                });
+                throw dpsnError;
+            }
+            // Handle all other errors
+            const dpsnError = new DPSNError({
+                code: DPSN_ERROR_CODES.INITIALIZATION_FAILED,
+                message: `Client initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                status:'disconnected'
+            });
+            throw dpsnError;
         }
-
-        this.wallet = new ethers.Wallet(privateKey);
-
-        this.walletAddress = this.wallet.address;
-        this.mainnet = chainOptions.network === 'mainnet' ;
-        this.testnet = chainOptions.network === 'testnet';
-        
-        this.blockchainType = chainOptions.wallet_chain_type;
-        // Use mqtts:// or mqtt:// based on useSSL parameter
-        const protocol = connectionOptions.ssl !== false ? 'mqtts' : 'mqtt';
-        this.dpsnUrl = `${protocol}://${dpsnUrl}`
-        this.topicContractAbi = TopicRegistryAbi;
-        
-        // Set default callbacks to prevent errors if not set by user
-        this.connectCallback = (msg: any) => console.log(msg);
-        this.errorCallback = (error: any) => console.error(error);
     }
 
 
@@ -131,11 +237,11 @@ class DpsnClient {
                     this.dpsnBroker.on('error', (error) => {
                         this.connected = false;
                         clearTimeout(connectionTimeout);
-                        const dpsnError: DPSNError = {
-                            code: 'DPSN_CONNECTION_ERROR',
+                        const dpsnError = new DPSNError({
+                            code: DPSN_ERROR_CODES.CONNECTION_ERROR,
                             message: 'Connection error occurred',
-                            status: 'disconnected'
-                        };
+                            status: 'disconnected',
+                        });
                         this.errorCallback(dpsnError);
                         reject(dpsnError);
                     });
@@ -163,7 +269,7 @@ class DpsnClient {
     }
 
     /**
-     * Initialize the MQTT client and connect to the DPSN broker
+     * Initialize the DPSN MQTT client and connect to the DPSN broker
      * @param options - Optional configuration options
      * @param options.connectTimeout - Connection timeout in milliseconds (default 5000)
      * @param options.retryOptions - Retry options
@@ -194,8 +300,18 @@ class DpsnClient {
 
     async init(options: InitOptions = {}): Promise<MqttClient> {
         try {
-            const signature = await this.wallet.signMessage('testing');
-            this.password = signature;
+            try{
+                const signature = await this.wallet.signMessage('testing');
+                this.password = signature;
+            } catch (error) {
+                const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.CONNECTION_ERROR,
+                    message: 'Failed to sign message',
+                    status: 'disconnected',
+                });
+                this.errorCallback(dpsnError);
+                throw dpsnError;
+            }
 
             const mqttOptions: IClientOptions = {
                 username: this.walletAddress,
@@ -225,7 +341,13 @@ class DpsnClient {
 
             return this.dpsnBroker!;
         } catch (error) {
-            throw error;
+            const dpsnError = new DPSNError({
+                code: DPSN_ERROR_CODES.CONNECTION_ERROR,
+                message: `Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                status: 'disconnected',
+            });
+            this.errorCallback(dpsnError);
+            throw dpsnError;
         }
     }
         
@@ -241,12 +363,12 @@ class DpsnClient {
         
 
     /**
-     * Publish a message to a MQTT topic with signature
+     * Publish a message to a DPSN MQTT topic with signature
      * @param topic - The topic to publish to (must be a hex string)
      * @param message - The message to publish (will be JSON stringified)
-     * @param options - Optional MQTT publish options (QoS, retain, etc.)
+     * @param options - Optional DPSN MQTT publish options (QoS, retain, etc.)
      * @returns Promise that resolves when publish is successful
-     * @throws Error if MQTT client is not initialized, topic is invalid, or publish fails
+     * @throws DPSNError if DPSN MQTT client is not initialized, topic is invalid, or publish fails
      */
     async publish(
         topic: string,
@@ -257,13 +379,13 @@ class DpsnClient {
         await this.ensureInitialized();
         
         if (!this.dpsnBroker) {
-            throw new Error('❌ MQTT client not initialized. Initialization failed.');
+            throw new Error('❌ DPSN MQTT client not initialized. Initialization failed.');
         }
 
         const parentTopic = topic.split("/")[0];
 
         if (!/^0x[0-9a-fA-F]+$/.test(parentTopic)) {
-            throw new Error('❌ Invalid topic format. Topic must be a hex string starting with 0x');
+            throw new Error('❌ Invalid DPSN topic format. Topic must be a hex string starting with 0x');
         }
 
         try {
@@ -285,21 +407,19 @@ class DpsnClient {
                     publishOptions,
                     (error) => {
                         if (error) {
-                            const dpsnError: DPSNError = {
-                                code: 'DPSN_PUBLISH_ERROR',
-                                message: error.message || 'Failed to publish message' + "connection disconnected",
-                            };
-                            // Emit the error event to trigger global handler
-                            this.dpsnBroker?.emit('error', dpsnError as Error);
+                            const dpsnError = new DPSNError({
+                                code: DPSN_ERROR_CODES.PUBLISH_ERROR,
+                                message: error.message || 'Failed to publish message',
+                                status:'disconnected',
+                            });
                             return reject(dpsnError);
                         }
-                        console.log(`✅ Successfully published to '${topic}' with QoS ${options.qos}`);
                         resolve();
                     }
                 );
             });
         } catch (error) {
-            console.error(`❌ Error while preparing message for topic '${topic}':`, error);
+            console.error(`❌ Error while preparing message for DPSN topic '${topic}':`, error);
             throw error;
         }
     }
@@ -307,12 +427,12 @@ class DpsnClient {
 
 
     /**
-     * Subscribe to a MQTT topic and handle incoming messages
+     * Subscribe to a DPSN MQTT topic and handle incoming messages
      * @param topic - The topic to subscribe to
      * @param callback - Callback function that will be called with received messages
-     * @param options - Optional MQTT subscription options
+     * @param options - Optional DPSN MQTT subscription options
      * @returns Promise that resolves when subscription is successful
-     * @throws Error if MQTT client is not initialized or subscription fails
+     * @throws DPSNError if DPSN MQTT client is not initialized or subscription fails
      */
     async subscribe(
         topic: string,
@@ -323,29 +443,29 @@ class DpsnClient {
         try {
             await this.ensureInitialized();
         } catch (error) {
-            const dpsnError: DPSNError = {
-                code: 'DPSN_INITIALIZATION_FAILED',
+            const dpsnError = new DPSNError({
+                code: DPSN_ERROR_CODES.INITIALIZATION_FAILED,
                 message: `Failed to initialize MQTT client: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 status: 'disconnected'
-            };
+            });
             throw dpsnError;
         }
         
         if (!this.dpsnBroker) {
-            const dpsnError: DPSNError = {
-                code: 'DPSN_CLIENT_NOT_INITIALIZED',
-                message: 'Cannot subscribe: MQTT client not initialized. Initialization failed.',
+            const dpsnError = new DPSNError({
+                code: DPSN_ERROR_CODES.CLIENT_NOT_INITIALIZED,
+                message: 'Cannot subscribe: DPSN MQTT client not initialized. Initialization failed.',
                 status: 'disconnected'
-            };
+            });
             throw dpsnError;
         }
 
         if (!this.connected) {
-            const dpsnError: DPSNError = {
-                code: 'DPSN_CLIENT_NOT_CONNECTED',
-                message: 'Cannot subscribe: MQTT client is not connected. Please check your connection.',
+            const dpsnError = new DPSNError({
+                code: DPSN_ERROR_CODES.CLIENT_NOT_CONNECTED,
+                message: 'Cannot subscribe: DPSN MQTT client is not connected. Please check your connection.',
                 status: 'disconnected'
-            };
+            });
             throw dpsnError;
         }
 
@@ -353,27 +473,26 @@ class DpsnClient {
             await new Promise<void>((resolve, reject) => {
                 this.dpsnBroker!.subscribe(topic, options, (error, granted) => {
                     if (error) {
-                        const dpsnError: DPSNError = {
-                            code: 'DPSN_SUBSCRIBE_ERROR',
-                            message: `Failed to subscribe to topic '${topic}': ${error.message}`,
-
-                        };
-                        this.dpsnBroker?.emit('error', dpsnError as Error);
+                        const dpsnError = new DPSNError({
+                            code: DPSN_ERROR_CODES.SUBSCRIBE_ERROR,
+                            message: `Failed to subscribe to DPSN topic '${topic}': ${error.message}`
+                        });
+                        // Only reject the promise, don't emit the error event
                         reject(dpsnError);
                         return;
                     }
 
                     if (!granted || granted.length === 0) {
-                        const dpsnError: DPSNError = {
-                            code: 'DPSN_SUBSCRIBE_NO_GRANT',
-                            message: `No subscription granted for topic '${topic}'`,
-                        };
+                        const dpsnError = new DPSNError({
+                            code: DPSN_ERROR_CODES.SUBSCRIBE_NO_GRANT,
+                            message: `No subscription granted for DPSN topic '${topic}'`
+                        });
                         reject(dpsnError);
                         return;
                     }
 
                     const grantedQoS = granted[0].qos;
-                    console.log(`✅ Successfully subscribed to '${topic}' with QoS ${grantedQoS}`);
+                    console.log(`✅ Successfully subscribed to DPSN topic '${topic}' with QoS ${grantedQoS}`);
                     resolve();
                 });
             });
@@ -386,7 +505,7 @@ class DpsnClient {
 
                         callback(receivedTopic, parsedMessage, packet);
                     } catch (error) {
-                        console.warn(`⚠️ Error parsing message from topic '${topic}':`, error);
+                        console.warn(`⚠️ Error parsing message from DPSN topic '${topic}':`, error);
                         // Call callback with raw message if JSON parsing fails
                         callback(receivedTopic, message.toString(), packet);
                     }
@@ -394,11 +513,11 @@ class DpsnClient {
             });
 
         } catch (error) {
-            const dpsnError: DPSNError = {
-                code: 'DPSN_SUBSCRIBE_SETUP_ERROR',
-                message: `Failed to set up subscription for topic '${topic}': ${error instanceof Error ? error.message : 'Unknown error'}`
-
-            };
+            const dpsnError = new DPSNError({
+                code: DPSN_ERROR_CODES.SUBSCRIBE_SETUP_ERROR,
+                message: `Failed to set up subscription for DPSN topic '${topic}': ${error instanceof Error ? error.message : 'Unknown error'}`,
+                status:'disconnected'
+            });
             throw dpsnError;
         }
     }
@@ -407,7 +526,12 @@ class DpsnClient {
         try {
 
             if (!this.contract) {
-                throw new Error('Blockchain configuration not initialized. Please call setBlockchainConfig first.');
+                const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
+                    message: 'Blockchain configuration not initialized. Please call setBlockchainConfig first.',
+                    status:'disconnected'
+                });
+                throw dpsnError;
             }
             
             const topicHashes = await this.contract?.getUserTopics(this.walletAddress);
@@ -426,7 +550,12 @@ class DpsnClient {
     async getTopicPrice(): Promise<ethers.BigNumberish> {
         try {
             if (!this.contract) {
-                throw new Error('Blockchain configuration not initialized. Please call setBlockchainConfig first.');
+                const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
+                    message: 'Blockchain configuration not initialized. Please call setBlockchainConfig first.',
+                    status:'disconnected'
+                });
+                throw dpsnError;
             }
             const price = await this.contract?.getTopicPrice();
             return price;
@@ -462,8 +591,7 @@ class DpsnClient {
     }
 
     /**
-     * Registers a new topic in the contract with automatic hash generation
-     * @param contract - The contract instance
+     * Registers a new DPSN topic in the contract with automatic hash generation
      * @param topicName - Name of the topic (e.g., "0xdpsn02BTC/USD")
      * @returns Transaction receipt and the generated topic hash
      * @throws Error if registration fails or if balance is insufficient
@@ -474,11 +602,21 @@ class DpsnClient {
         try {
 
             if (!this.contract) {
-                throw new Error('Blockchain configuration not initialized. Please call setBlockchainConfig first.');
+                    const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
+                    message: 'Blockchain configuration not initialized. Please call setBlockchainConfig first.',
+                    status:'disconnected'
+                });
+                throw dpsnError;
             }
             
             if(!this.provider){
-                throw new Error('Provider not initialized. Please call setBlockchainConfig first.');
+                const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
+                    message: 'Provider not initialized. Please call setBlockchainConfig first.',
+                    status:'disconnected'
+                });
+                throw dpsnError;
             }
 
             const price = ethers.toBigInt(await this.getTopicPrice());
@@ -601,11 +739,11 @@ class DpsnClient {
      */
     async disconnect(): Promise<void> {
         if (!this.dpsnBroker) {
-            const dpsnError: DPSNError = {
-                code: 'DPSN_CLIENT_NOT_INITIALIZED',
-                message: 'Cannot disconnect: MQTT client not initialized.',
+            const dpsnError = new DPSNError({
+                code: DPSN_ERROR_CODES.CLIENT_NOT_INITIALIZED,
+                message: 'Cannot disconnect: DPSN client not initialized.',
                 status: 'disconnected'
-            };
+            });
             throw dpsnError;
         }
 
@@ -619,11 +757,11 @@ class DpsnClient {
                 });
 
                 this.dpsnBroker!.once('error', (error) => {
-                    const dpsnError: DPSNError = {
-                        code: 'DPSN_DISCONNECT_ERROR',
+                    const dpsnError = new DPSNError({
+                        code: DPSN_ERROR_CODES.DISCONNECT_ERROR,
                         message: `Error during disconnect: ${error.message}`,
                         status: 'disconnected'
-                    };
+                    });
                     reject(dpsnError);
                 });
 
@@ -634,11 +772,11 @@ class DpsnClient {
                     this.initializing = null;
                 });
             } catch (error) {
-                const dpsnError: DPSNError = {
-                    code: 'DPSN_DISCONNECT_ERROR',
+                const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.DISCONNECT_ERROR,
                     message: `Failed to disconnect: ${error instanceof Error ? error.message : 'Unknown error'}`,
                     status: 'disconnected'
-                };
+                });
                 reject(dpsnError);
             }
         });
