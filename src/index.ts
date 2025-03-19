@@ -593,6 +593,56 @@ class DpsnClient {
             throw new Error(`Failed to create contract interface: ${(error as Error).message}`);
         }
     }
+
+    /**
+     * Disconnects from the MQTT broker and cleans up resources
+     * @returns Promise that resolves when disconnection is complete
+     * @throws Error if MQTT client is not initialized or disconnection fails
+     */
+    async disconnect(): Promise<void> {
+        if (!this.dpsnBroker) {
+            const dpsnError: DPSNError = {
+                code: 'DPSN_CLIENT_NOT_INITIALIZED',
+                message: 'Cannot disconnect: MQTT client not initialized.',
+                status: 'disconnected'
+            };
+            throw dpsnError;
+        }
+
+        return new Promise<void>((resolve, reject) => {
+            try {
+                // Set up one-time event handlers for disconnect confirmation
+                this.dpsnBroker!.once('close', () => {
+                    this.connected = false;
+                    console.log('✅ Successfully disconnected from DPSN broker');
+                    resolve();
+                });
+
+                this.dpsnBroker!.once('error', (error) => {
+                    const dpsnError: DPSNError = {
+                        code: 'DPSN_DISCONNECT_ERROR',
+                        message: `Error during disconnect: ${error.message}`,
+                        status: 'disconnected'
+                    };
+                    reject(dpsnError);
+                });
+
+                // End the connection - false means wait for in-flight messages to complete
+                this.dpsnBroker?.end(false, undefined, () => {
+                    // This callback is sometimes not triggered in certain MQTT implementations
+                    // so we rely primarily on the 'close' event above
+                    this.initializing = null;
+                });
+            } catch (error) {
+                const dpsnError: DPSNError = {
+                    code: 'DPSN_DISCONNECT_ERROR',
+                    message: `Failed to disconnect: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    status: 'disconnected'
+                };
+                reject(dpsnError);
+            }
+        });
+    }
 }
 
 
