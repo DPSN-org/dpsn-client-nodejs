@@ -2,6 +2,7 @@ import mqtt, { IClientOptions, MqttClient } from 'mqtt';
 import { ethers } from 'ethers';
 import { TopicRegistryAbi } from './topicregistry-abi/contract.abi';
 import { waitForTransactionConfirmation } from './utils/waitForTransactionConfirmation';
+import { EventEmitter } from 'events';
 
 type NetworkType = 'mainnet' | 'testnet';
 
@@ -46,6 +47,21 @@ class DPSNError extends Error {
         this.code = options.code;
         this.status = options.status;
         this.name = options.name || '';
+        
+        // Remove stack trace for cleaner error objects when emitted
+        this.stack = undefined;
+    }
+    
+    /**
+     * Returns a clean object representation of the error without stack traces
+     */
+    toJSON() {
+        return {
+            code: this.code,
+            message: this.message,
+            status: this.status,
+            name: this.name
+        };
     }
 }
 
@@ -148,9 +164,25 @@ function validateChainOptions(options: ChainOptions): void {
 }
 
 /**
+ * Success event types for the DPSN client
+ */
+export type DpsnEventType = 'connect' | 'subscription' | 'publish' | 'disconnect' | 'error';
+
+/**
+ * Success event data structure for the DPSN client
+ */
+export type DpsnEventData = {
+  connect: string;
+  subscription: { topic: string, qos: number };
+  publish: { topic: string, messageId?: number };
+  disconnect: void;
+  error: Error | DPSNError
+};
+
+/**
  * DPSN MQTT library for managing topic subscriptions and publications
  */
-class DpsnClient {
+class DpsnClient extends EventEmitter {
     private provider!: ethers.JsonRpcProvider;
     private wallet: ethers.Wallet;
     private walletAddress: string;
@@ -162,12 +194,11 @@ class DpsnClient {
     private topicContractAbi: any;
     public dpsnUrl:string;
     private connected:boolean = false;
-    private connectCallback:any;
-    private errorCallback:any;
     private contract?:ethers.Contract;
     private initializing: Promise<MqttClient> | null = null;
 
     constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions, connectionOptions: ConnectionOptions = { ssl: true }) {
+        super();
         try {
             validateChainOptions(chainOptions);
             validatePrivateKey(privateKey);
@@ -186,9 +217,6 @@ class DpsnClient {
             const protocol = connectionOptions.ssl !== false ? 'mqtts' : 'mqtt';
             this.dpsnUrl = `${protocol}://${dpsnUrl}`
             this.topicContractAbi = TopicRegistryAbi;
-            
-            this.connectCallback = (msg: any) => console.log(msg);
-            this.errorCallback = (error: any) => console.error(error);
         } catch (error) {
             // If it's already a DPSNError (like INVALID_PRIVATE_KEY), just rethrow it
             if (error instanceof DPSNError) {
@@ -212,6 +240,105 @@ class DpsnClient {
             throw dpsnError;
         }
     }
+
+
+       /**
+    //  * Register a callback for all success events
+    //  * @param eventType The type of success event to listen for
+    //  * @param callback Function to call when the specified event occurs
+    //  */
+    //    on<T extends DpsnEventType>(
+    //     eventType: T,
+    //     callback: (data: DpsnEventData[T]) => void
+    // ): this {
+    //     switch (eventType) {
+    //         case 'connect':
+    //             this.on('connect', callback as (data: string) => void);
+    //             break;
+    //         case 'subscription':
+    //             this.on('subscription_success', callback as (data: { topic: string, qos: number }) => void);
+    //             break;
+    //         case 'publish':
+    //             this.on('publish_success', callback as (data: { topic: string, messageId?: number }) => void);
+    //             break;
+    //         case 'error':
+    //             this.on('error', callback as (error: Error | DPSNError) => void);
+    //             break;
+    //         case 'disconnect':
+    //             this.on('disconnect_success', callback as (data: void) => void);
+    //             break;
+    //     }
+    //     return this
+    // }
+
+    /**
+     * Override the EventEmitter's on method to handle both standard events and DPSN event types
+     * @param event The event name or DPSN event type
+     * @param listener The callback function
+     * @returns this instance for method chaining
+     */
+    on(event: string | symbol | DpsnEventType, listener: (...args: any[]) => void): this {
+        // Check if the event is a DPSN event type
+        if (typeof event === 'string' && 
+            ['connect', 'subscription', 'publish', 'error', 'disconnect'].includes(event as string) &&
+            !event.includes('_success')) {
+            
+            // Handle DPSN event types
+            const eventType = event as DpsnEventType;
+            switch (eventType) {
+                case 'connect':
+                    return super.on('connect', listener as (data: string) => void);
+                case 'subscription':
+                    return super.on('subscription_success', listener as (data: { topic: string, qos: number }) => void);
+                case 'publish':
+                    return super.on('publish_success', listener as (data: { topic: string, messageId?: number }) => void);
+                case 'error':
+                    return super.on('error', listener as (error: Error | DPSNError) => void);
+                case 'disconnect':
+                    return super.on('disconnect_success', listener as (data: void) => void);
+                default:
+                    return super.on(event, listener);
+            }
+        }
+        
+        // For standard EventEmitter events, use the parent implementation
+        return super.on(event, listener);
+    }
+
+
+        /**
+     * Register a callback for connection events
+     * @deprecated Use on('connect', callback) or the EventEmitter pattern
+     * @param callback Function to call when connection is established
+     */
+        onConnect(callback: (message: string) => void) {
+            this.on('connect', callback);
+        }
+    
+        /**
+         * Register a callback for all error events
+         * @deprecated Use on('error', callback) or the EventEmitter pattern
+         * @param callback Function to call when any error occurs
+         */
+        onError(callback: (error: Error | DPSNError) => void): void {
+            // Use a wrapper to ensure we don't expose stack traces
+            this.on('error', (error) => {
+                // For DPSNError, we already handle stack trace removal in the class
+                // For other errors, create a clean version
+                if (!(error instanceof DPSNError)) {
+                    const cleanError = {
+                        message: error.message,
+                        name: error.name
+                    };
+                    callback(cleanError as Error);
+                } else {
+                    callback(error);
+                }
+            });
+        }
+    
+
+
 
 
     private async connectWithRetry(mqttOptions: IClientOptions, retryOptions?: InitOptions['retryOptions']): Promise<void> {
@@ -239,17 +366,17 @@ class DpsnClient {
                         clearTimeout(connectionTimeout);
                         const dpsnError = new DPSNError({
                             code: DPSN_ERROR_CODES.CONNECTION_ERROR,
-                            message: 'Connection error occurred',
-                            status: 'disconnected',
+                            message: `DPSN connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                            status: 'disconnected'
                         });
-                        this.errorCallback(dpsnError);
+                        this.emit('error', dpsnError);
                         reject(dpsnError);
                     });
 
                     this.dpsnBroker.on('connect', () => {
                         clearTimeout(connectionTimeout);
                         this.connected = true;
-                        this.connectCallback("[CONNECTION ESTABLISHED]");
+                        this.emit('connect', "[CONNECTION ESTABLISHED]");
                         resolve();
                     });
                 });
@@ -309,7 +436,7 @@ class DpsnClient {
                     message: 'Failed to sign message',
                     status: 'disconnected',
                 });
-                this.errorCallback(dpsnError);
+                this.emit('error', dpsnError);
                 throw dpsnError;
             }
 
@@ -324,7 +451,14 @@ class DpsnClient {
             await this.connectWithRetry(mqttOptions, options.retryOptions);
 
             this.dpsnBroker!.on('error', (error) => {
-                this.errorCallback(error);
+                // Forward MQTT errors to our event emitter
+                // Create a clean DPSNError before emitting
+                const dpsnError = new DPSNError({
+                    code: DPSN_ERROR_CODES.MQTT_ERROR,
+                    message: error instanceof Error ? error.message : 'Unknown MQTT error',
+                    status: 'disconnected'
+                });
+                this.emit('error', dpsnError);
             });
 
             this.dpsnBroker!.on('close', () => {
@@ -346,20 +480,10 @@ class DpsnClient {
                 message: `Failed to connect: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 status: 'disconnected',
             });
-            this.errorCallback(dpsnError);
+            this.emit('error', dpsnError);
             throw dpsnError;
         }
     }
-        
-
-    onConnect(callback:any){
-            this.connectCallback = callback;
-        }
-
-    onError(callback:any){
-            this.errorCallback = callback;
-        }
-
         
 
     /**
@@ -405,15 +529,23 @@ class DpsnClient {
                     topic,
                     JSON.stringify(message),
                     publishOptions,
-                    (error) => {
+                    (error, packet) => {
                         if (error) {
                             const dpsnError = new DPSNError({
                                 code: DPSN_ERROR_CODES.PUBLISH_ERROR,
                                 message: error.message || 'Failed to publish message',
                                 status:'disconnected',
                             });
+                            this.emit('error', dpsnError);
                             return reject(dpsnError);
                         }
+                        
+                        // Emit success event when publishing succeeds
+                        this.emit('publish_success', { 
+                            topic, 
+                            messageId: packet?.messageId 
+                        });
+                        
                         resolve();
                     }
                 );
@@ -492,7 +624,7 @@ class DpsnClient {
                     }
 
                     const grantedQoS = granted[0].qos;
-                    console.log(`✅ Successfully subscribed to DPSN topic '${topic}' with QoS ${grantedQoS}`);
+                    this.emit('subscription_success', { topic, qos: grantedQoS });
                     resolve();
                 });
             });
@@ -658,9 +790,9 @@ class DpsnClient {
 
 
             const receipt = await waitForTransactionConfirmation(this.provider, tx.hash, {
-                confirmations: 2,           
-                timeout: 120000,          
-                pollingInterval: 5000      
+                confirmations: 2,           // Wait for 2 confirmations
+                timeout: 120000,          // 2 minutes
+                pollingInterval: 5000      // Check every 5 seconds
             });
 
 
@@ -748,37 +880,38 @@ class DpsnClient {
         }
 
         return new Promise<void>((resolve, reject) => {
-            try {
-                // Set up one-time event handlers for disconnect confirmation
-                this.dpsnBroker!.once('close', () => {
-                    this.connected = false;
-                    console.log('✅ Successfully disconnected from DPSN broker');
-                    resolve();
-                });
+            // Set up event handlers for the disconnect process
+            this.dpsnBroker!.once('close', () => {
+                this.connected = false;
+                this.emit('disconnect_success');
+                console.log('✅ Successfully disconnected from DPSN broker');
+                resolve();
+            });
 
-                this.dpsnBroker!.once('error', (error) => {
-                    const dpsnError = new DPSNError({
-                        code: DPSN_ERROR_CODES.DISCONNECT_ERROR,
-                        message: `Error during disconnect: ${error.message}`,
-                        status: 'disconnected'
-                    });
-                    reject(dpsnError);
-                });
-
-                // End the connection - false means wait for in-flight messages to complete
-                this.dpsnBroker?.end(false, undefined, () => {
-                    // This callback is sometimes not triggered in certain MQTT implementations
-                    // so we rely primarily on the 'close' event above
-                    this.initializing = null;
-                });
-            } catch (error) {
+            this.dpsnBroker!.once('error', (error) => {
                 const dpsnError = new DPSNError({
                     code: DPSN_ERROR_CODES.DISCONNECT_ERROR,
-                    message: `Failed to disconnect: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    message: `Error during disconnect: ${error.message}`,
                     status: 'disconnected'
                 });
+                this.emit('error', dpsnError);
                 reject(dpsnError);
-            }
+            });
+
+            // End the connection - false means wait for in-flight messages to complete
+            this.dpsnBroker?.end(false, undefined, (err) => {
+                if (err) {
+                    const dpsnError = new DPSNError({
+                        code: DPSN_ERROR_CODES.DISCONNECT_ERROR,
+                        message: `Failed to disconnect: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                        status: 'disconnected'
+                    });
+                    this.emit('error', dpsnError);
+                    reject(dpsnError);
+                }
+                // We don't resolve here because we want to wait for the 'close' event
+                this.initializing = null;
+            });
         });
     }
 }
