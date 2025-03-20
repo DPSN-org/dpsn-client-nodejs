@@ -5,6 +5,7 @@
 `dpsn-client-nodejs` is an SDK for creating, accessing data streams on DPSN infrastructure. It allows you to connect to a DPSN broker, publish messages to topics, and subscribe to topics to receive messages.
 
 For more information, visit:
+
 - [DPSN Official Website](https://dpsn.org)
 - [DPSN Streams Marketplace](https://streams.dpsn.org)
 
@@ -123,6 +124,14 @@ const price = await dpsn.getTopicPrice();
 console.log("Topic price:", price);
 ```
 
+### Disconnecting from the MQTT Broker
+
+To properly disconnect from the MQTT broker and clean up resources:
+
+```ts
+await dpsn.disconnect();
+```
+
 ## API Reference
 
 ### Classes
@@ -147,6 +156,7 @@ constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions, con
 - [`purchaseTopic(topicName: string): Promise<{ receipt: ethers.TransactionReceipt; topicHash: string }>`](src/index.ts)
 - [`setContractAddress(contractAddress: string): void`](src/index.ts)
 - [`setBlockchainConfig(rpcUrl: string, contractAddress: string): ethers.Contract`](src/index.ts)
+- [`disconnect(): Promise<void>`](src/index.ts)
 
 ### Types
 
@@ -211,4 +221,3 @@ interface DPSNError {
 ## License
 
 This project is licensed under the ISC License.
-
