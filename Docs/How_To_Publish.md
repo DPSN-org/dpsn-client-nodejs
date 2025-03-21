@@ -50,6 +50,16 @@ dpsnClient.setBlockchainConfig(<base_rpc_url>,<contract_address>)
 ```ts
 const {receipt,topicHash} = await dpsnClient.purchaseTopic(<topic_name>);
 ```
+- receipt -  returns transaction receipt.
+- topicHash - returns unique topic name owned by the configured base wallet from which transaction was executed.
+
+ > *Note: Wallet used to perform transaction holds the ownership to this unique topic, only owner can publish to created topic*
+
+### Fetch Owned Topics:
+```ts
+const topics = await dpsnClient.getOwnedTopics();
+```
+- returns list of owned topic against configured base wallet private key
 
 ### Setup Event Handlers
 >
