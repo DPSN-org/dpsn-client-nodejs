@@ -1,114 +1,112 @@
 # How To Publish Data Using DPSN
 
-## Pre-requisites
+## Prerequisites
 
-- DPSN URL - (betanet.dpsn.org)
-- DPSN Smart Contract Address : 0xC4c4CFCB2EDDC26660850A4f422841645941E352 (on base sepolia testnet)
-- Wallet private key - private key for wallet on base chain.
-- RPC URL - rpc url from any provider of base testnet rpc nodes.
-- Min balance of 0.002 base eth to register topic.
+- DPSN URL: betanet.dpsn.org
+- DPSN Smart Contract Address: 0xC4c4CFCB2EDDC26660850A4f422841645941E352 (on Base Sepolia testnet)
+- Wallet private key: Your private key for a wallet on Base chain
+- RPC URL: URL from any Base testnet RPC provider
+- Minimum balance: 0.002 Base ETH to register a topic
 
 ## 🛠️ Installation
 
-- Install DPSN library from npmjs
+Install the DPSN library from npm:
 
 ```shell
 npm install dpsn-client@latest
 ```
 
-## Steps
+## Implementation Steps
 
-> **Caution** Ensure you are using appropriate url for dpsn , base rpc and base wallet private key
+> **Caution:** Ensure you're using the appropriate DPSN URL, Base RPC, and Base wallet private key
 
-> **Note:** You can create metamask wallet , change to network to base chain and get some base eth from base testnet faucet
+> **Note:** You can create a MetaMask wallet, switch to Base chain, and obtain Sepolia Base ETH from the testnet faucet
 
-### Import the library
+### Import the Library
 
 ```ts
 import {DpsnClient} from 'dpsn-client';
 ```
 
-### Create client instance
+### Create Client Instance
 
 ```ts
-const dpsnClient = new DpsnClient(<dpsn_url>,<private_key>,{
-  network:'testnet',
-  wallet_chain_type:'ethereum',
+const dpsnClient = new DpsnClient(<dpsn_url>, <private_key>, {
+  network: 'testnet',
+  wallet_chain_type: 'ethereum',
 })
 ```
 
-### Configure blockchain config
+### Configure Blockchain Settings
 
 ```ts
-dpsnClient.setBlockchainConfig(<base_rpc_url>,<contract_address>)
+dpsnClient.setBlockchainConfig(<base_rpc_url>, <contract_address>)
 ```
 
 ### Purchase Topic
->
-> **Caution** Before you purchase topic make sure you have minimum balance of 0.002 base eth available otherwise blockchain transaction might fail.
+
+> **Caution:** Ensure you have a minimum balance of 0.002 Base ETH available to prevent transaction failure
 
 ```ts
-const {receipt,topicHash} = await dpsnClient.purchaseTopic(<topic_name>);
+const {receipt, topicHash} = await dpsnClient.purchaseTopic(<topic_name>);
 ```
-- receipt -  returns transaction receipt.
-- topicHash - returns unique topic name owned by the configured base wallet from which transaction was executed.
+- `receipt`: Transaction receipt from the blockchain
+- `topicHash`: Unique topic name owned by the wallet that executed the transaction
 
- > *Note: Wallet used to perform transaction holds the ownership to this unique topic, only owner can publish to created topic*
+> **Note:** Only the wallet that purchased the topic can publish to it
 
-### Fetch Owned Topics:
+### Fetch Owned Topics
+
 ```ts
 const topics = await dpsnClient.getOwnedTopics();
 ```
-- returns list of owned topic against configured base wallet private key
+- Returns a list of topics owned by the configured wallet
 
 ### Setup Event Handlers
->
-> **Note** This event handlers helps to handle events like connection, disconnection, publishing events and errors. always setup these handlers before init()
+
+> **Note:** Set up these event handlers before calling `init()` to properly handle connection events
 
 ```ts
-dpsnClient.on('connect',(res)=>{
+dpsnClient.on('connect', (res) => {
   console.log(res);
 })
 
-
-dpsnClient.on('publish',(res)=>{
+dpsnClient.on('publish', (res) => {
   console.log(res);
 })
 
-dpsnClient.on('subscription',(res)=>{
-  console.log("STARTED SUBSCRIPTION:",res)
+dpsnClient.on('subscription', (res) => {
+  console.log("STARTED SUBSCRIPTION:", res)
 })
 
-dpsnClient.on('disconnect',(res)=>{
+dpsnClient.on('disconnect', (res) => {
   console.log(res);
 })
 
-
-dpsnClient.on('error',(err)=>{
-  console.log("OPEREATION FAILED: ",err);
+dpsnClient.on('error', (err) => {
+  console.log("OPERATION FAILED: ", err);
 })
-
 ```
 
-### Initialize DPSN client
->
-> **Caution**: Make sure you have configured correct dpsn url and base wallet private key
+### Initialize DPSN Client
+
+> **Caution:** Verify you've configured the correct DPSN url and wallet private key
 
 ```ts
 await dpsnClient.init()
 ```
 
-### Publish
->
-> **Caution**: Make sure you use same private key used purchase topic, othewise authentication will fail
+### Publish Data
+
+> **Caution:** You must use the same private key that purchased the topic, otherwise authentication will fail
 
 ```ts
-await dpsnClient.publish(<topic_hash>,<data>);
+await dpsnClient.publish(<topic_hash>, <data>);
 ```
 
 ### Disconnect
->
-> Usefull incase of terminating connection
+
+> For properly terminating the connection when needed
 
 ```ts
 await dpsnClient.disconnect();
