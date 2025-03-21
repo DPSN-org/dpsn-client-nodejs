@@ -43,6 +43,35 @@ const dpsnClient = new DpsnClient(<dpsn_url>, <private_key>, {
 dpsnClient.setBlockchainConfig(<base_rpc_url>, <contract_address>)
 ```
 
+### Understanding DPSN Topics
+
+Topics in DPSN are data distribution channels that enable secure, permissioned data streams. They function as:
+
+- **Ownership-based channels**: Each topic is owned by the wallet that purchases it
+- **Data streams**: Publishers push data to topics, and subscribers receive data from topics they're following
+- **Permissioned resources**: Only the owner can publish to a topic, while anyone can subscribe to it
+- **Authenticated channels**: The blockchain provides the authentication and ownership layer
+
+
+Think of topics as secure broadcast channels where data integrity and publisher authenticity are guaranteed by blockchain verification.
+
+### How Topic Ownership Works
+
+When you purchase a topic:
+
+1. Your wallet initiates a blockchain transaction to the DPSN smart contract on the Base Sepolia network.
+
+2. This transaction:
+   - Requires at least 0.002 Base ETH
+   - Associates the topic name with your wallet's address in the contract
+   - Generates a unique topicHash that becomes owned by your wallet
+
+3. Authentication works through:
+   - Your wallet's private key signing messages when publishing
+   - The dpsn nodes  verifying that only the registered owner can publish to that topic
+
+4. When publishing data, the publishing client uses the same private key that purchased the topic to authenticate the request, ensuring only authorized wallets can publish to their owned topics.
+
 ### Purchase Topic
 
 > **Caution:** Ensure you have a minimum balance of 0.002 Base ETH available to prevent transaction failure
@@ -53,7 +82,6 @@ const {receipt, topicHash} = await dpsnClient.purchaseTopic(<topic_name>);
 - `receipt`: Transaction receipt from the blockchain
 - `topicHash`: Unique topic name owned by the wallet that executed the transaction
 
-> **Note:** Only the wallet that purchased the topic can publish to it
 
 ### Fetch Owned Topics
 
