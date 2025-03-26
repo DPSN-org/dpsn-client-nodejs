@@ -159,6 +159,18 @@ await dpsnClient.subscribe("TOPIC_HASH", (topic, message, packet) => {
 });
 ```
 
+### Unsubscribing from Topics
+
+To unsubscribe from a topic when you no longer want to receive messages, use the [`unsubscribe`](src/index.ts) method:
+
+```ts
+const result = await dpsnClient.unsubscribe("TOPIC_HASH");
+console.log(`Successfully unsubscribed from ${result.topic}: ${result.message}`);
+```
+
+This method returns a response object containing:
+- `topic`: The topic you unsubscribed from
+- `message`: A confirmation message ("unsubscribed")
 
 ### Disconnect
 
@@ -192,6 +204,7 @@ constructor(dpsnUrl: string, privateKey: string, chainOptions: ChainOptions, con
 - [`onError(callback: (error: Error | DPSNError) => void): void`](src/index.ts) - *Deprecated*: Register a callback for error events (use `on('error', callback)` instead)
 - [`publish(topic: string, message: any, options?: Partial<mqtt.IClientPublishOptions>): Promise<void>`](src/index.ts) - Publish a message to a topic
 - [`subscribe(topic: string, callback: (topic: string, message: any, packet?: mqtt.IPublishPacket) => void, options?: mqtt.IClientSubscribeOptions): Promise<void>`](src/index.ts) - Subscribe to a topic
+- [`unsubscribe(topic: string): Promise<{topic: string, message: string}>`](src/index.ts) - Unsubscribe from a topic and stop receiving messages
 - [`getOwnedTopics(): Promise<string[]>`](src/index.ts) - Get topics owned by the current wallet
 - [`getTopicPrice(): Promise<ethers.BigNumberish>`](src/index.ts) - Get the current price to purchase a topic
 - [`purchaseTopic(topicName: string): Promise<{ receipt: ethers.TransactionReceipt; topicHash: string }>`](src/index.ts) - Purchase a new topic
@@ -253,6 +266,7 @@ type DpsnEventData = {
   publish: { topic: string, messageId?: number };
   disconnect: void;
   error: Error | DPSNError;
+  unsubscribe: { topic: string };
 };
 ```
 
