@@ -275,7 +275,6 @@ class DpsnClient extends EventEmitter {
         'publish',
         'error',
         'disconnect',
-        'unsubscribe',
       ].includes(event as string) &&
       !event.includes('_success')
     ) {
