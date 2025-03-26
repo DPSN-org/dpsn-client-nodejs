@@ -254,7 +254,7 @@ interface InitOptions {
 #### [`DpsnEventType`](src/index.ts)
 
 ```ts
-type DpsnEventType = 'connect' | 'subscription' | 'publish' | 'disconnect' | 'error' | 'unsubscribe';
+type DpsnEventType = 'connect' | 'subscription' | 'publish' | 'disconnect' | 'error';
 ```
 
 #### [`DpsnEventData`](src/index.ts)
