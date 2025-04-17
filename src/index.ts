@@ -205,7 +205,7 @@ class DpsnClient extends EventEmitter {
 
   private topicCallbacks = new Map<
     string,
-    Array<(topic: string, message: any, packet?: mqtt.IPublishPacket) => void>
+    Set<(topic: string, message: any, packet?: mqtt.IPublishPacket) => void>
   >();
 
   constructor(
@@ -492,7 +492,7 @@ class DpsnClient extends EventEmitter {
           payload: Buffer,
           packet: mqtt.IPublishPacket
         ) => {
-          const cbs = this.topicCallbacks.get(receivedTopic) ?? [];
+          const cbs = this.topicCallbacks.get(receivedTopic) ?? new Set();
           let data: any;
           try {
             data = JSON.parse(payload.toString());
@@ -700,9 +700,9 @@ class DpsnClient extends EventEmitter {
       throw dpsnError;
     }
     if (!this.topicCallbacks.has(topic)) {
-      this.topicCallbacks.set(topic, []);
+      this.topicCallbacks.set(topic, new Set());
     }
-    this.topicCallbacks.get(topic)!.push(callback);
+    this.topicCallbacks.get(topic)!.add(callback);
   }
 
   /**
