@@ -203,6 +203,11 @@ class DpsnClient extends EventEmitter {
   private contract?: ethers.Contract;
   private initializing: Promise<MqttClient> | null = null;
 
+  private topicCallbacks = new Map<
+    string,
+    (topic: string, message: any, packet?: mqtt.IPublishPacket) => void
+  >();
+
   constructor(
     dpsnUrl: string,
     privateKey: string,
@@ -269,13 +274,9 @@ class DpsnClient extends EventEmitter {
     // Check if the event is a DPSN event type
     if (
       typeof event === 'string' &&
-      [
-        'connect',
-        'subscription',
-        'publish',
-        'error',
-        'disconnect',
-      ].includes(event as string) &&
+      ['connect', 'subscription', 'publish', 'error', 'disconnect'].includes(
+        event as string
+      ) &&
       !event.includes('_success')
     ) {
       // Handle DPSN event types
@@ -302,6 +303,15 @@ class DpsnClient extends EventEmitter {
           return super.on(
             'disconnect_success',
             listener as (data: void) => void
+          );
+        case 'message':
+          return super.on(
+            'message',
+            listener as (
+              topic: string,
+              message: any,
+              packet?: mqtt.IPublishPacket
+            ) => void
           );
         default:
           return super.on(event, listener);
@@ -474,6 +484,25 @@ class DpsnClient extends EventEmitter {
         });
         this.emit('error', dpsnError);
       });
+
+      this.dpsnBroker!.on(
+        'message',
+        (
+          receivedTopic: string,
+          payload: Buffer,
+          packet: mqtt.IPublishPacket
+        ) => {
+          let data: any;
+          try {
+            data = JSON.parse(payload.toString());
+          } catch {
+            data = payload.toString();
+          }
+          const callback = this.topicCallbacks.get(receivedTopic);
+          if (callback) callback(receivedTopic, data, packet);
+          super.emit('message', receivedTopic, data, packet);
+        }
+      );
 
       this.dpsnBroker!.on('close', () => {
         this.connected = false;
@@ -658,31 +687,6 @@ class DpsnClient extends EventEmitter {
           resolve();
         });
       });
-
-      // Set up message handler for this topic
-      this.dpsnBroker.on(
-        'message',
-        (
-          receivedTopic: string,
-          message: Buffer,
-          packet: mqtt.IPublishPacket
-        ) => {
-          if (receivedTopic === topic) {
-            try {
-              const parsedMessage = JSON.parse(message.toString());
-
-              callback(receivedTopic, parsedMessage, packet);
-            } catch (error) {
-              console.warn(
-                `⚠️ Error parsing message from DPSN topic '${topic}':`,
-                error
-              );
-              // Call callback with raw message if JSON parsing fails
-              callback(receivedTopic, message.toString(), packet);
-            }
-          }
-        }
-      );
     } catch (error) {
       const dpsnError = new DPSNError({
         code: DPSN_ERROR_CODES.SUBSCRIBE_SETUP_ERROR,
@@ -693,6 +697,7 @@ class DpsnClient extends EventEmitter {
       });
       throw dpsnError;
     }
+    this.topicCallbacks.set(topic, callback);
   }
 
   /**
