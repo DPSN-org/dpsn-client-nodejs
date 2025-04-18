@@ -304,15 +304,6 @@ class DpsnClient extends EventEmitter {
             'disconnect_success',
             listener as (data: void) => void
           );
-        case 'message':
-          return super.on(
-            'message',
-            listener as (
-              topic: string,
-              message: any,
-              packet?: mqtt.IPublishPacket
-            ) => void
-          );
         default:
           return super.on(event, listener);
       }
@@ -500,7 +491,6 @@ class DpsnClient extends EventEmitter {
           }
           const callback = this.topicCallbacks.get(receivedTopic);
           if (callback) callback(receivedTopic, data, packet);
-          super.emit('message', receivedTopic, data, packet);
         }
       );
 
