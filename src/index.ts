@@ -188,7 +188,7 @@ export type DpsnEventData = {
 /**
  * DPSN MQTT library for managing topic subscriptions and publications
  */
-class DpsnClient extends EventEmitter {
+export class DpsnClient extends EventEmitter {
   private provider!: ethers.JsonRpcProvider;
   private wallet: ethers.Wallet;
   private walletAddress: string;
@@ -1025,22 +1025,8 @@ export type {
   ConnectionOptions,
 };
 
-/**
- * Main export - use a simple pattern to avoid require cycles
- * This approach works in both CommonJS and ESM environments
- */
-
 // Create the default export
 const defaultExport = DpsnClient;
 
 // Export as default for ESM
 export default defaultExport;
-
-// Export as named export for ESM
-export { DpsnClient };
-
-// Handle CommonJS interoperability
-if (typeof module !== 'undefined' && module.exports) {
-  // Use a direct assignment to avoid Object.assign which can cause issues
-  module.exports = defaultExport;
-}
