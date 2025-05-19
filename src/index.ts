@@ -542,19 +542,17 @@ export class DpsnClient extends EventEmitter {
       );
     }
 
-    const parentTopic = topic.split('/')[0];
-
+    var parentTopic = topic.split('/')[0];
+    var hex = true;
     if (!/^0x[0-9a-fA-F]+$/.test(parentTopic)) {
-      throw new Error(
-        '❌ Invalid DPSN topic format. Topic must be a hex string starting with 0x'
-      );
+      hex = false;
+      parentTopic = ethers.keccak256(ethers.toUtf8Bytes(parentTopic));
     }
 
     try {
       const signature = await this.wallet.signMessage(
-        ethers.toBeArray(parentTopic)
+        hex ? ethers.toBeArray(parentTopic) : ethers.getBytes(parentTopic)
       );
-
       const publishOptions: MqttPublishOptions = {
         ...options,
         properties: {
