@@ -215,7 +215,6 @@ class DPSNError extends Error {
 - SUBSCRIBE_SETUP_ERROR (408): Error setting up subscription handlers
 - DISCONNECT_ERROR (409): Error during disconnection
 - INVALID_PRIVATE_KEY (411): Invalid access token/private key
-- ETHERS_ERROR (412): Ethers.js related errors
 - MQTT_ERROR (413): MQTT protocol errors
 
 ## License
