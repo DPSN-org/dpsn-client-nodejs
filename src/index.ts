@@ -1,10 +1,7 @@
 import mqtt, { IClientOptions, MqttClient } from 'mqtt';
 import { ethers } from 'ethers';
-import { TopicRegistryAbi } from './topicregistry-abi/contract.abi';
-import { waitForTransactionConfirmation } from './utils/waitForTransactionConfirmation';
 import { EventEmitter } from 'events';
-
-type NetworkType = 'mainnet' | 'testnet';
+import { deprecate } from 'util';
 
 // Error code definitions
 enum DPSN_ERROR_CODES {
@@ -21,7 +18,6 @@ enum DPSN_ERROR_CODES {
   SUBSCRIBE_SETUP_ERROR = 408,
 
   DISCONNECT_ERROR = 409,
-  BLOCKCHAIN_CONFIG_ERROR = 410,
   INVALID_PRIVATE_KEY = 411,
   ETHERS_ERROR = 412,
   MQTT_ERROR = 413,
@@ -65,59 +61,22 @@ class DPSNError extends Error {
 }
 
 /**
- * Check if an error is from ethers.js
- * @param error The error to check
- * @returns True if the error is from ethers.js
- */
-function isEthersError(error: any): boolean {
-  // Check for common ethers.js error properties
-  return (
-    error &&
-    (error.code === 'INVALID_ARGUMENT' ||
-      (typeof error.code === 'string' &&
-        (error.code.startsWith('CALL_EXCEPTION') ||
-          error.code.startsWith('NONCE_EXPIRED') ||
-          error.code.startsWith('REPLACEMENT_UNDERPRICED') ||
-          error.code.startsWith('UNPREDICTABLE_GAS_LIMIT'))) ||
-      // Check for transaction-related errors
-      error.transaction !== undefined ||
-      // Check for provider-related errors
-      error.connection !== undefined ||
-      // Check for specific ethers error message patterns
-      (typeof error.message === 'string' &&
-        (error.message.includes('invalid BytesLike') ||
-          error.message.includes('transaction') ||
-          error.message.includes('contract') ||
-          error.message.includes('provider') ||
-          error.message.includes('network') ||
-          error.message.includes('gas'))))
-  );
-}
-
-/**
  * Validate private key format using ethers.js
  * @param privateKey The private key to validate
  * @throws DPSNError if the private key is invalid
  */
-function validatePrivateKey(privateKey: string): void {
+function validateAccessToken(privateKey: string): void {
   try {
-    // Let ethers.js validate the private key
     new ethers.Wallet(privateKey);
   } catch (error) {
     throw new DPSNError({
       code: DPSN_ERROR_CODES.INVALID_PRIVATE_KEY,
-      message: `Invalid private key: ${
+      message: `Invalid DPSN accesstoken key: ${
         error instanceof Error ? error.message : 'Unknown error'
       }`,
       status: 'disconnected',
     });
   }
-}
-
-interface ChainOptions {
-  network: NetworkType;
-  wallet_chain_type: string;
-  rpcUrl?: string;
 }
 
 interface MqttPublishOptions extends mqtt.IClientPublishOptions {
@@ -136,31 +95,6 @@ interface InitOptions {
     maxDelay?: number; // Maximum delay between retries in milliseconds
     exponentialBackoff?: boolean; // Whether to use exponential backoff
   };
-}
-
-/**
- * Connection options for DPSN client
- */
-interface ConnectionOptions {
-  /**
-   * Whether to use SSL for MQTT connection
-   * If true, mqtts:// protocol will be used
-   * If false, mqtt:// protocol will be used
-   */
-  ssl?: boolean;
-}
-
-/**
- * Validates chain options for DPSN client
- * @param options - Chain configuration options
- */
-function validateChainOptions(options: ChainOptions): void {
-  if (!['mainnet', 'testnet'].includes(options.network)) {
-    throw new Error('Network must be either mainnet or testnet');
-  }
-  if (options.wallet_chain_type !== 'ethereum') {
-    throw new Error('Only Ethereum wallet_chain_type is supported right now');
-  }
 }
 
 /**
@@ -189,67 +123,38 @@ export type DpsnEventData = {
  * DPSN MQTT library for managing topic subscriptions and publications
  */
 export class DpsnClient extends EventEmitter {
-  private provider!: ethers.JsonRpcProvider;
   private wallet: ethers.Wallet;
   private walletAddress: string;
-  private mainnet: boolean;
-  private testnet: boolean;
-  private blockchainType: string;
   private password?: string;
   public dpsnBroker?: MqttClient;
-  private topicContractAbi: any;
   public dpsnUrl: string;
   private connected: boolean = false;
-  private contract?: ethers.Contract;
   private initializing: Promise<MqttClient> | null = null;
 
-  private topicCallbacks = new Map<
-    string,
-    (topic: string, message: any, packet?: mqtt.IPublishPacket) => void
-  >();
+  private topicCallbacks = new Map<string, (message: any) => void>();
 
-  constructor(
-    dpsnUrl: string,
-    privateKey: string,
-    chainOptions: ChainOptions,
-    connectionOptions: ConnectionOptions = { ssl: true }
-  ) {
+  constructor(dpsnUrl: string, dpsn_accestoken: string, ssl?: boolean) {
     super();
     try {
-      validateChainOptions(chainOptions);
-      validatePrivateKey(privateKey);
+      this.dpsnUrl = dpsnUrl;
+      validateAccessToken(dpsn_accestoken);
 
-      if (chainOptions.rpcUrl) {
-        this.provider = new ethers.JsonRpcProvider(chainOptions.rpcUrl);
-      }
-
-      this.wallet = new ethers.Wallet(privateKey);
+      this.wallet = new ethers.Wallet(dpsn_accestoken);
 
       this.walletAddress = this.wallet.address;
-      this.mainnet = chainOptions.network === 'mainnet';
-      this.testnet = chainOptions.network === 'testnet';
 
-      this.blockchainType = chainOptions.wallet_chain_type;
-      const protocol = connectionOptions.ssl !== false ? 'mqtts' : 'mqtt';
-      this.dpsnUrl = `${protocol}://${dpsnUrl}`;
-      this.topicContractAbi = TopicRegistryAbi;
+      if (ssl == true) {
+        this.dpsnUrl =
+          'mqtts://' + this.dpsnUrl.replace(/^(mqtt|mqtts):\/\//, '');
+      } else if (ssl == false) {
+        this.dpsnUrl =
+          'mqtt://' + this.dpsnUrl.replace(/^(mqtt|mqtts):\/\//, '');
+      }
     } catch (error) {
       // If it's already a DPSNError (like INVALID_PRIVATE_KEY), just rethrow it
       if (error instanceof DPSNError) {
         throw error;
       }
-      // Check for ethers.js errors
-      if (isEthersError(error)) {
-        const dpsnError = new DPSNError({
-          code: DPSN_ERROR_CODES.ETHERS_ERROR,
-          message: `Blockchain initialization error: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`,
-          status: 'disconnected',
-        });
-        throw dpsnError;
-      }
-      // Handle all other errors
       const dpsnError = new DPSNError({
         code: DPSN_ERROR_CODES.INITIALIZATION_FAILED,
         message: `Client initialization failed: ${
@@ -465,8 +370,6 @@ export class DpsnClient extends EventEmitter {
       await this.connectWithRetry(mqttOptions, options.retryOptions);
 
       this.dpsnBroker!.on('error', (error) => {
-        // Forward MQTT errors to our event emitter
-        // Create a clean DPSNError before emitting
         const dpsnError = new DPSNError({
           code: DPSN_ERROR_CODES.MQTT_ERROR,
           message:
@@ -490,7 +393,7 @@ export class DpsnClient extends EventEmitter {
             data = payload.toString();
           }
           const callback = this.topicCallbacks.get(receivedTopic);
-          if (callback) callback(receivedTopic, data, packet);
+          if (callback) callback(data);
         }
       );
 
@@ -542,19 +445,17 @@ export class DpsnClient extends EventEmitter {
       );
     }
 
-    const parentTopic = topic.split('/')[0];
-
+    var parentTopic = topic.split('/')[0];
+    var hex = true;
     if (!/^0x[0-9a-fA-F]+$/.test(parentTopic)) {
-      throw new Error(
-        '❌ Invalid DPSN topic format. Topic must be a hex string starting with 0x'
-      );
+      hex = false;
+      parentTopic = ethers.keccak256(ethers.toUtf8Bytes(parentTopic));
     }
 
     try {
       const signature = await this.wallet.signMessage(
-        ethers.toBeArray(parentTopic)
+        hex ? ethers.toBeArray(parentTopic) : ethers.getBytes(parentTopic)
       );
-
       const publishOptions: MqttPublishOptions = {
         ...options,
         properties: {
@@ -609,14 +510,9 @@ export class DpsnClient extends EventEmitter {
    */
   async subscribe(
     topic: string,
-    callback: (
-      topic: string,
-      message: any,
-      packet?: mqtt.IPublishPacket
-    ) => void,
+    callback: (message: any) => void,
     options: mqtt.IClientSubscribeOptions = { qos: 1 }
   ): Promise<void> {
-    // Ensure client is initialized before subscribing
     try {
       await this.ensureInitialized();
     } catch (error) {
@@ -737,231 +633,6 @@ export class DpsnClient extends EventEmitter {
     );
   }
 
-  async fetchOwnedTopics(): Promise<string[]> {
-    try {
-      if (!this.contract) {
-        const dpsnError = new DPSNError({
-          code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
-          message:
-            'Blockchain configuration not initialized. Please call setBlockchainConfig first.',
-          status: 'disconnected',
-        });
-        throw dpsnError;
-      }
-
-      const topicHashes = await this.contract?.getUserTopics(
-        this.walletAddress
-      );
-      return topicHashes;
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch owned topics: ${(error as Error).message}`
-      );
-    }
-  }
-
-  /**
-   * Fetches the current price of a topic from the smart contract
-   * @param contract - The contract instance
-   * @returns The topic price in wei
-   * @throws Error if the price fetch fails
-   */
-  async getTopicPrice(): Promise<ethers.BigNumberish> {
-    try {
-      if (!this.contract) {
-        const dpsnError = new DPSNError({
-          code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
-          message:
-            'Blockchain configuration not initialized. Please call setBlockchainConfig first.',
-          status: 'disconnected',
-        });
-        throw dpsnError;
-      }
-      const price = await this.contract?.getTopicPrice();
-      return price;
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch topic price: ${(error as Error).message}`
-      );
-    }
-  }
-
-  /**
-   * Checks if the user has enough balance to pay for a topic registration
-   * @param price - The price of the topic in wei
-   * @throws Error if balance is insufficient
-   */
-  private async checkBalance(price: bigint): Promise<void> {
-    const balance = await this.provider.getBalance(this.walletAddress);
-    if (balance < price) {
-      throw new Error(
-        `Insufficient balance. Required: ${ethers.formatEther(price)} ETH, ` +
-          `Available: ${ethers.formatEther(balance)} ETH`
-      );
-    }
-  }
-
-  /**
-   * Generates a topic hash using the current timestamp and topic name
-   * @param topicName - Name of the topic (e.g., "0xdpsn02BTC/USD")
-   * @returns The generated topic hash
-   */
-  private generateTopicHash(topicName: string): string {
-    const timestampNonce = Math.floor(Date.now() / 1000);
-    const topicSeed = `${timestampNonce}_${topicName}`;
-    return ethers.keccak256(ethers.toUtf8Bytes(topicSeed));
-  }
-
-  /**
-   * Registers a new DPSN topic in the contract with automatic hash generation
-   * @param topicName - Name of the topic (e.g., "0xdpsn02BTC/USD")
-   * @returns Transaction receipt and the generated topic hash
-   * @throws Error if registration fails or if balance is insufficient
-   */
-  async purchaseTopic(
-    topicName: string
-  ): Promise<{ receipt: ethers.TransactionReceipt; topicHash: string }> {
-    try {
-      if (!this.contract) {
-        const dpsnError = new DPSNError({
-          code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
-          message:
-            'Blockchain configuration not initialized. Please call setBlockchainConfig first.',
-          status: 'disconnected',
-        });
-        throw dpsnError;
-      }
-
-      if (!this.provider) {
-        const dpsnError = new DPSNError({
-          code: DPSN_ERROR_CODES.BLOCKCHAIN_CONFIG_ERROR,
-          message:
-            'Provider not initialized. Please call setBlockchainConfig first.',
-          status: 'disconnected',
-        });
-        throw dpsnError;
-      }
-
-      const price = ethers.toBigInt(await this.getTopicPrice());
-
-      await this.checkBalance(price);
-
-      const topicHash = this.generateTopicHash(topicName);
-      console.log('Generated topic hash:', topicHash);
-
-      const signature = await this.wallet.signMessage(
-        ethers.getBytes(topicHash)
-      );
-      console.log('Generated signature:', signature);
-
-      const getContractAddress = await this.contract.getAddress();
-
-      // Connect the wallet to the provider before creating the contract instance
-      const connectedWallet = this.wallet.connect(this.provider);
-
-      const contractSigner = new ethers.Contract(
-        getContractAddress,
-        this.topicContractAbi,
-        connectedWallet
-      );
-
-      console.log(
-        `Purchasing topic '${topicName}' for ${ethers.formatEther(price)} ETH`
-      );
-
-      // Send transaction
-      const tx = await contractSigner.registerTopic(
-        topicName,
-        topicHash,
-        signature,
-        { value: price }
-      );
-      console.log('Transaction sent. Hash:', tx.hash);
-
-      const receipt = await waitForTransactionConfirmation(
-        this.provider,
-        tx.hash,
-        {
-          confirmations: 2, // Wait for 2 confirmations
-          timeout: 120000, // 2 minutes
-          pollingInterval: 5000, // Check every 5 seconds
-        }
-      );
-
-      return { receipt, topicHash };
-    } catch (error) {
-      console.error('Error details:');
-      if ((error as any).data) {
-        console.error('Contract error:', (error as any).data);
-      }
-      if ((error as any).transaction) {
-        console.error('Transaction:', (error as any).transaction);
-      }
-      console.error('Full error:', error);
-      throw new Error(`Failed to register topic: ${(error as Error).message}`);
-    }
-  }
-
-  /**
-   * Sets the JSON RPC provider for blockchain interactions
-   * @param rpcUrl - The URL of the JSON RPC endpoint
-   * @returns The provider instance
-   */
-  setProvider(rpcUrl: string): ethers.JsonRpcProvider {
-    this.provider = new ethers.JsonRpcProvider(rpcUrl);
-    return this.provider;
-  }
-
-  /**
-   * Sets both the provider and contract address in a single call
-   * @param rpcUrl - The URL of the JSON RPC endpoint
-   * @param contractAddress - The address of the deployed contract
-   * @returns The initialized contract instance
-   */
-  setBlockchainConfig(
-    rpcUrl?: string,
-    contractAddress?: string
-  ): ethers.Contract {
-    if (rpcUrl) {
-      // Set the provider first
-      this.setProvider(rpcUrl);
-    }
-    if (contractAddress) {
-      // Then set the contract address
-      this.setContractAddress(contractAddress);
-    }
-    // Return the contract instance
-    return this.contract!;
-  }
-
-  /**
-   * Creates a contract interface for interacting with the smart contract
-   * @param contractAddress - The address of the deployed contract
-   * @returns The contract interface
-   */
-  setContractAddress(contractAddress: string): void {
-    if (!this.provider) {
-      throw new Error(
-        'Provider not initialized. Please call setBlockchainConfig first.'
-      );
-    }
-    const connectedWallet = this.wallet.connect(this.provider);
-    try {
-      this.contract = new ethers.Contract(
-        contractAddress,
-        this.topicContractAbi,
-        connectedWallet
-      );
-      // this.contract = contract;
-
-      // return contract;
-    } catch (error) {
-      throw new Error(
-        `Failed to create contract interface: ${(error as Error).message}`
-      );
-    }
-  }
-
   /**
    * Disconnects from the MQTT broker and cleans up resources
    * @returns Promise that resolves when disconnection is complete
@@ -1017,15 +688,8 @@ export class DpsnClient extends EventEmitter {
 }
 
 // Export types for TypeScript users
-export type {
-  ChainOptions,
-  NetworkType,
-  InitOptions,
-  DPSNError,
-  ConnectionOptions,
-};
+export type { InitOptions, DPSNError };
 
-// Create the default export
 const defaultExport = DpsnClient;
 
 // Export as default for ESM
