@@ -133,20 +133,25 @@ export class DpsnClient extends EventEmitter {
 
   private topicCallbacks = new Map<string, (message: any) => void>();
 
-  constructor(dpsnUrl: string, dpsn_accestoken: string, ssl?: boolean) {
+  constructor(dpsnUrl: string, dpsn_accesstoken: string, ssl?: boolean) {
     super();
     try {
       this.dpsnUrl = dpsnUrl;
-      validateAccessToken(dpsn_accestoken);
+      validateAccessToken(dpsn_accesstoken);
 
-      this.wallet = new ethers.Wallet(dpsn_accestoken);
+      this.wallet = new ethers.Wallet(dpsn_accesstoken);
 
       this.walletAddress = this.wallet.address;
 
-      if (ssl == true) {
+      // Default ssl to true if undefined, false only if explicitly passed as false
+      const useSsl = ssl === undefined ? true : ssl;
+
+      if (useSsl) {
+        // Use MQTT over SSL/TLS
         this.dpsnUrl =
           'mqtts://' + this.dpsnUrl.replace(/^(mqtt|mqtts):\/\//, '');
-      } else if (ssl == false) {
+      } else {
+        // Use plain MQTT
         this.dpsnUrl =
           'mqtt://' + this.dpsnUrl.replace(/^(mqtt|mqtts):\/\//, '');
       }
